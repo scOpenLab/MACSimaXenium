@@ -10,7 +10,7 @@
 
 ## Overview
 
-MACSimaXenium provides a pipeline for aligning **Xenium** spatial transcriptomics data (10x Genomics) with **MACSima** multiplexed cyclic immunofluorescence (mxIF) imaging. Registration is performed per tissue microarray (TMA) core using SIFT-based feature matching and outputs multi-modal [`SpatialData`](https://spatialdata.scverse.org/) objects saved as Zarr archives.
+MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics data (10x Genomics) with **MACSima** multiplexed cyclic immunofluorescence (mxIF) imaging. Registration is performed per tissue microarray (TMA) core using SIFT-based feature matching and outputs multi-modal [`SpatialData`](https://spatialdata.scverse.org/) objects saved as SpatialData objects.
 
 ---
 
