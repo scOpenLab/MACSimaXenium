@@ -14,13 +14,8 @@ import tempfile
 import argparse
 import os
 
-# Ensure Dask uses the legacy dataframe backend required by spatialdata
-os.environ.setdefault("DASK_DATAFRAME__QUERY_PLANNING", "False")
+
 import dask
-dask.config.set({"dataframe.query-planning": False})
-import dask.dataframe as dd
-if hasattr(dd, "DASK_EXPR_ENABLED") and dd.DASK_EXPR_ENABLED:
-    dd.DASK_EXPR_ENABLED = False
 import dask_image
 import skimage
 import numpy as np
@@ -29,9 +24,7 @@ import pandas as pd
 import spatialdata as sd
 import spatialdata_io
 import tifffile
-import zarr
-import pyarrow.parquet as pq
-from spatialdata.models import Image2DModel, TableModel, PointsModel
+from spatialdata.models import Image2DModel, TableModel
 from spatialdata.transformations import get_transformation, set_transformation, Identity, Scale
 from shapely import affinity
 import matplotlib.pyplot as plt

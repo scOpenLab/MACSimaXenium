@@ -34,12 +34,13 @@
 #  
 
 
-
+import os
 import scanpy as sc
 import tifffile
 import matplotlib.pyplot as plt
 import numpy as np
-
+# Import our custom registration module
+from xenium_macsima_core_registration import XeniumMacsimaRegistration, preprocess_reg
 
 # %% [markdown]
 # # Match ROI to Slide position
@@ -145,19 +146,8 @@ plt.close()
 # %% [markdown]
 # # Align Each Roi
 
-# %%
-# Import required libraries
-import dask
-dask.config.set({'dataframe.query-planning': False})
-import numpy as np
-import matplotlib.pyplot as plt
-import os
 
-import sys
-sys.path.append('/omics/odcf/analysis/OE0260_projects/spatial/jakob/registration_xenium_macsima_amplify/')
-# Import our custom registration module
-from xenium_macsima_core_registration import XeniumMacsimaRegistration
-from spatialdata.transformations import get_transformation
+
 
 
 
@@ -340,11 +330,6 @@ for position_adata, roi_macsima in iterover:
     # %%
     # Create registration summary plot manually
     print("Generating registration summary visualization...")
-
-    # Import required modules
-    import matplotlib.pyplot as plt
-    import numpy as np
-    from xenium_macsima_core_registration import preprocess_reg
 
     # Get the processed MACSIMA from the aligned data
     aligned_macsima_computed = aligned_macsima.compute()
