@@ -17,16 +17,18 @@ MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics d
 ## Repository Structure
 
 ```
-.
-├── src/
-│   ├── 00_match_rois_cores_fullslide.py        # Match MACSima ROIs to Xenium TMA positions & run full-slide registration
-│   └── 01_xenium_macsima_core_registration.py  # Core registration module (XeniumMacsimaRegistration class)
-├── example/
-│   ├── 00_align_one_core.ipynb                 # Minimal end-to-end example (single core)
-│   └── data/
-│       └── prepare_example_data.ipynb          # Crop & filter full-slide files to example core
-├── environment.yml                             # Conda environment specification
-└── README.md
+├── example
+│   ├── 00_align_one_core.ipynb
+│   └── data
+│       └── prepare_example_data.ipynb
+├── LICENSE
+├── pyproject.toml
+├── README.md
+└── src
+    └── xenium_macsima_core_registration
+        ├── __init__.py
+        ├── match_rois_cores_fullslide.py
+        └── xenium_macsima_core_registration.py
 ```
 
 ---
@@ -51,19 +53,19 @@ Each TMA core is treated as an independent dataset and processed through the fol
 
 ```bash
 git clone https://github.com/scOpenLab/MACSimaXenium.git
-cd MACSimaXenium
 ```
 
-### 2. Create the venv environment
+### 2. Create the venv environment and activate it
 
 ```bash
- 
+python 3 -m venv macsima_xenium
+source macsima_xenium/bin/activate
 ```
 
-### 3. Install the required packages
+### 3. Install the repository as a package
 
 ```bash
- 
+pip install ./MACSimaXenium/
 ```
 
 ---
@@ -113,7 +115,7 @@ python src/00_match_rois_cores_fullslide.py
 ### Programmatic API
 
 ```python
-from xenium_macsima_core_registration import XeniumMacsimaRegistration
+from xenium_macsima_core_registration.xenium_macsima_core_registration import XeniumMacsimaRegistration
 
 reg = XeniumMacsimaRegistration(scale_factor=3)
 
