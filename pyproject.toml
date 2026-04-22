@@ -1,0 +1,18 @@
+[project]
+name = "xenium_macsima_core_registration"
+description = "MACSima Xenium Registration for TMA slides"
+version = "1.0.0"
+urls.Documentation = "https://github.com/scOpenLab/MACSimaXenium.git"
+urls.Source = "https://github.com/scOpenLab/MACSimaXenium.git"
+urls.Home-page = "https://github.com/scOpenLab/MACSimaXenium.git"
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = [
+	"spatialdata>=0.7.2",
+	"spatialdata-io>=0.6.0",
+	"opencv-python-headless>=4.13.0.92", 
+]
+
+[tool.setuptools]
+packages = ["xenium_macsima_core_registration"]
+package-dir = {"" = "src"}
