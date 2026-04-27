@@ -1,3 +1,11 @@
+# Example data and Example output
+example/data/annot_xenium/*
+example/data/macsima/*
+example/data/output/*
+example/data/raw_xenium/*
+example/registration_quality_Pos1.0_ROI40.png
+example/aligned_objects/Slide_TMAN2-1-1/Pos_{POSITION}_ROI_{ROI_INDEX}.zarr/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

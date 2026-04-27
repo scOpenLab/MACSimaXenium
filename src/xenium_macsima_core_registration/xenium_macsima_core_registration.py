@@ -198,7 +198,7 @@ class XeniumMacsimaRegistration:
         print(f"Loading morphology focus from {morphology_path}")
 
         mf_img = tifffile.imread(morphology_path)
-        chunk_size = (1,) + tuple(min(1024, dim) for dim in mf_img.shape[1:])
+        chunk_size = (1, min(1024, mf_img.shape[1]), min(1024, mf_img.shape[2]))
         mf_img = dask.array.from_array(mf_img, chunks=chunk_size)
 
         return mf_img
@@ -220,7 +220,7 @@ class XeniumMacsimaRegistration:
         print(f"Loading MACSIMA image from {macsima_path}")
 
         cx_img = tifffile.imread(macsima_path)
-        chunk_size = (1,) + tuple(min(1024, dim) for dim in cx_img.shape[1:])
+        chunk_size = (min(1024, cx_img.shape[0]), min(1024, cx_img.shape[1]))
         cx_img = dask.array.from_array(cx_img, chunks=chunk_size)
 
         return cx_img
@@ -301,9 +301,10 @@ class XeniumMacsimaRegistration:
         
         print("Applying transformation to full MACSIMA image")
         aligned_macsima = dask_image.ndinterp.affine_transform(
-            macsima_img, affine_2d_full, output_shape=macsima_img.shape
+            macsima_img, affine_2d_full, output_shape=macsima_img.shape,
+            output_chunks=(1024, 1024) 
         )
-        
+
         return affine_2d_corrected, affine_2d_full, aligned_macsima
     
     def transform_boundaries(self):
@@ -390,9 +391,8 @@ class XeniumMacsimaRegistration:
         set_transformation(aligned_data['nucleus_boundaries'], Identity(), "global")
         
         # Add aligned MACSIMA image
-        aligned_macsima_numpy = aligned_macsima.compute()
         macsima_model = Image2DModel.parse(
-            np.expand_dims(aligned_macsima_numpy, axis=0),
+            dask.array.expand_dims(aligned_macsima, 0),
             c_coords=[0],
             dims=('c', 'y', 'x'),
         )
@@ -487,18 +487,18 @@ class XeniumMacsimaRegistration:
             Affine transformation matrix
         """
         other_img = tifffile.imread(image_path)
-        chunk_size = (1,) + tuple(min(1024, dim) for dim in other_img.shape[1:])
+        chunk_size = (min(1024, other_img.shape[0]), min(1024, other_img.shape[1]))
         other_img = dask.array.from_array(other_img, chunks=chunk_size)
 
         # Transform the image
         other_img_transformed = dask_image.ndinterp.affine_transform(
-            other_img, affine_2d_full, output_shape=other_img.shape
+            other_img, affine_2d_full, output_shape=other_img.shape, output_chunks=(1024, 1024)
         )
-
-        # Convert to numpy and create model
-        other_img_transformed_numpy = other_img_transformed.compute()
+        
+        # Create model
+        other_img_transformed = dask.array.expand_dims(other_img_transformed, 0)
         other_image_model = Image2DModel.parse(
-            np.expand_dims(other_img_transformed_numpy, axis=0),
+            other_img_transformed,
             c_coords=[0],
             dims=('c', 'y', 'x'),
         )
@@ -974,7 +974,7 @@ if __name__ == "__main__":
     # Read the codex image converted to zarr as:
     print("Reading CODEX image")
     cx_img = tifffile.imread(codex_tiff)
-    chunk_size = (1,) + tuple(min(1024, dim) for dim in cx_img.shape[1:])
+    chunk_size = (1, min(1024, cx_img.shape[1]), min(1024, cx_img.shape[2]))
     cx_img = dask.array.from_array(cx_img, chunks=chunk_size)
     cx_img = np.flip(cx_img, (1, 2))
     # Read the CODEX channel list
@@ -986,7 +986,7 @@ if __name__ == "__main__":
     print("Reading xenium morphology focus")
     mf_channels = ["DAPI", "ATP1A1/CD45/E-Cadherin", "18S", "alphaSMA/Vimentin"]
     mf_img = tifffile.imread(xenium_morphology_path)
-    chunk_size = (1,) + tuple(min(1024, dim) for dim in mf_img.shape[1:])
+    chunk_size = (1, min(1024, mf_img.shape[1]), min(1024, mf_img.shape[2]))
     mf_img = dask.array.from_array(mf_img, chunks=chunk_size)
 
     # First round for a coarse registration, allows to crop the CODEX using Xenium cooordinates
