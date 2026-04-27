@@ -10,6 +10,7 @@ readme = "README.md"
 dependencies = [
 	"spatialdata>=0.7.2",
 	"spatialdata-io>=0.6.0",
+	"ome-zarr==0.13.0",
 	"opencv-python-headless>=4.13.0.92", 
 ]
 
