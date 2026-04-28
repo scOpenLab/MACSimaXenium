@@ -58,7 +58,7 @@ git clone https://github.com/scOpenLab/MACSimaXenium.git
 ### 2. Create the venv environment and activate it
 
 ```bash
-python 3 -m venv macsima_xenium
+python3 -m venv macsima_xenium
 source macsima_xenium/bin/activate
 ```
 
