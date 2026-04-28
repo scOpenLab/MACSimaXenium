@@ -18,17 +18,18 @@ import os
 import dask
 import dask_image
 import skimage
+import tifffile
+import spatialdata_io
+import zarr
 import numpy as np
 import cv2 as cv
 import pandas as pd
 import spatialdata as sd
-import spatialdata_io
-import tifffile
+import matplotlib.pyplot as plt
+import scanpy as sc
 from spatialdata.models import Image2DModel, TableModel
 from spatialdata.transformations import get_transformation, set_transformation, Identity, Scale
 from shapely import affinity
-import matplotlib.pyplot as plt
-import scanpy as sc
 
 
 class XeniumMacsimaRegistration:
@@ -197,9 +198,9 @@ class XeniumMacsimaRegistration:
         )
         print(f"Loading morphology focus from {morphology_path}")
 
-        mf_img = tifffile.imread(morphology_path)
-        chunk_size = (1, min(1024, mf_img.shape[1]), min(1024, mf_img.shape[2]))
-        mf_img = dask.array.from_array(mf_img, chunks=chunk_size)
+        mf_img = tifffile.imread(morphology_path, aszarr=True)
+        mf_img = zarr.open(mf_img, mode="r")
+        mf_img = dask.array.from_zarr(mf_img["0"])
 
         return mf_img
     
@@ -219,11 +220,11 @@ class XeniumMacsimaRegistration:
         """
         print(f"Loading MACSIMA image from {macsima_path}")
 
-        cx_img = tifffile.imread(macsima_path)
-        chunk_size = (min(1024, cx_img.shape[0]), min(1024, cx_img.shape[1]))
-        cx_img = dask.array.from_array(cx_img, chunks=chunk_size)
+        mcs_img = tifffile.imread(macsima_path, aszarr=True)
+        mcs_img = zarr.open(mcs_img, mode="r")
+        mcs_img = dask.array.from_zarr(mcs_img["0"])
 
-        return cx_img
+        return mcs_img
     
     def calculate_roi_bbox(self, dx):
         """
@@ -401,7 +402,7 @@ class XeniumMacsimaRegistration:
         # Add morphology focus images if provided
         if mf_roi is not None:
             mf_roi_model = Image2DModel.parse(
-                np.expand_dims(mf_roi, axis=0),
+                dask.array.expand_dims(mf_roi, axis=0),
                 c_coords=[0],
                 dims=('c', 'y', 'x'),
             )
@@ -414,7 +415,7 @@ class XeniumMacsimaRegistration:
         
         if full_mf is not None:
             full_mf_model = Image2DModel.parse(
-                np.expand_dims(full_mf, axis=0),
+                dask.array.expand_dims(full_mf, axis=0),
                 c_coords=[0],
                 dims=('c', 'y', 'x'),
             )
@@ -486,9 +487,9 @@ class XeniumMacsimaRegistration:
         affine_2d_full : numpy.ndarray
             Affine transformation matrix
         """
-        other_img = tifffile.imread(image_path)
-        chunk_size = (min(1024, other_img.shape[0]), min(1024, other_img.shape[1]))
-        other_img = dask.array.from_array(other_img, chunks=chunk_size)
+        other_img = tifffile.imread(image_path, aszarr=True)
+        other_img = zarr.open(other_img, mode="r")
+        other_img = dask.array.from_zarr(other_img["0"])
 
         # Transform the image
         other_img_transformed = dask_image.ndinterp.affine_transform(
@@ -973,10 +974,12 @@ if __name__ == "__main__":
 
     # Read the codex image converted to zarr as:
     print("Reading CODEX image")
-    cx_img = tifffile.imread(codex_tiff)
-    chunk_size = (1, min(1024, cx_img.shape[1]), min(1024, cx_img.shape[2]))
-    cx_img = dask.array.from_array(cx_img, chunks=chunk_size)
-    cx_img = np.flip(cx_img, (1, 2))
+    
+    cx_img = tifffile.imread(codex_tiff, aszarr=True)
+    cx_img = zarr.open(cx_img, mode="r")
+    cx_img = dask.array.from_zarr(cx_img["0"])
+    cx_img = dask.array.flip(cx_img, (1, 2))
+
     # Read the CODEX channel list
     print("Reading CODEX channel list")
     with open(codex_channels_path, encoding="utf-8") as cc_file:
@@ -985,9 +988,9 @@ if __name__ == "__main__":
     # Read one of the xenium morphology focus images as zarr:
     print("Reading xenium morphology focus")
     mf_channels = ["DAPI", "ATP1A1/CD45/E-Cadherin", "18S", "alphaSMA/Vimentin"]
-    mf_img = tifffile.imread(xenium_morphology_path)
-    chunk_size = (1, min(1024, mf_img.shape[1]), min(1024, mf_img.shape[2]))
-    mf_img = dask.array.from_array(mf_img, chunks=chunk_size)
+    mf_img = tifffile.imread(xenium_morphology_path, aszarr=True)
+    mf_img = zarr.open(mf_img, mode="r")
+    mf_img = dask.array.from_zarr(mf_img["0"])
 
     # First round for a coarse registration, allows to crop the CODEX using Xenium cooordinates
     # Downscaling CODEX DAPI
