@@ -102,8 +102,48 @@ class XeniumMacsimaRegistration:
         Parameters:
         -----------
         xenium_folder : str
-            Path to the Xenium output folder
-            
+            Path to the Xenium output folder with: 
+            'experiment.xenium': File containing specifications.
+            'nucleus_boundaries.parquet': Polygons of nucleus boundaries.
+            'cell_boundaries.parquet': Polygons of cell boundaries.
+            'transcripts.parquet': File containing transcripts.
+            'cell_feature_matrix.h5': File containing cell feature matrix.
+            'cells.parquet': File containing cell metadata.
+            'morphology_mip.ome.tif': File containing morphology mip.
+            'morphology_focus.ome.tif': File containing morphology focus 
+        cells_bounderies : bool (default: True)
+            Load full cell segmentation boundaries (polygons)
+        nucleus bounderies: bool (default: True)
+             Load nucleus segmentation boundaries (polygons)
+        cells_as_circles: bool | None (default: None)
+            Use real cell shapes (False) instead of approximated circles 
+            (the center and the radius of each circle is computed from the corresponding
+            labels cell: True)
+        cells_labels: bool (default: True)
+            Load labeled cell segmentation mask (raster). 
+            The polygonal version of the cell labels are simplified for visualization 
+            purposes, and using the raster version is recommended for analysis.
+        nucleus_labels: bool (default: True)
+            Load nucleus label mask (raster). Same recommendations as 'cell_lables'
+        transcripts: bool (default: True)
+            Load transcript-level data (molecule coordinates)
+        morphology_mip: bool (default: True)
+            Load morphology mip (maximum intensity projection image) image 
+            (available in versions < 2.0.0).
+        morphology_focus: bool (default: True) 
+            Load morphology focus image (often large)
+            DAPI + segmentaion images and/or Protein panel (proteomics)
+        aligned_images: bool (default: True)
+            Align, when available, additional H&E or IF aligned images. 
+            For more control over the aligned images being read, set to False to specify the axes
+            of the aligned images and use the xenium_aligned_image function directly.
+        cells_table: bool (default: True)
+            Load cell feature table (gene counts per cell: AnnData)
+        n_jobs: int (default: 1)
+            Number of jobs to use for parallel processing
+
+
+        
         Returns:
         --------
         spatialdata.SpatialData
