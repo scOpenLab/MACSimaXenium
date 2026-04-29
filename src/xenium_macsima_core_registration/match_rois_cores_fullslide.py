@@ -332,12 +332,11 @@ for position_adata, roi_macsima in iterover:
     print("Generating registration summary visualization...")
 
     # Get the processed MACSIMA from the aligned data
-    aligned_macsima_computed = aligned_macsima.compute()
-    print(f"Full aligned MACSIMA shape: {aligned_macsima_computed.shape}")
+    print(f"Full aligned MACSIMA shape: {aligned_macsima.shape}")
     print(f"Morphology ROI shape: {mf_roi.shape}")
 
     # Process MACSIMA at the same scale as used for registration
-    dna_macsima_processed = preprocess_reg(aligned_macsima_computed, SCALE_FACTOR)
+    dna_macsima_processed = preprocess_reg(aligned_macsima, SCALE_FACTOR)
     print(f"Processed MACSIMA shape: {dna_macsima_processed.shape}")
 
     # Create figure with subplots
