@@ -599,7 +599,8 @@ class XeniumMacsimaRegistration:
         axes[0, 0].scatter(
             dx.obsm['spatial_transformed'][:, 0] - self.bbox[0],
             dx.obsm['spatial_transformed'][:, 1] - self.bbox[1],
-            color='red', s=5, alpha=0.7, label='Cell centers'
+            color='red', s=1, alpha=0.1, label='Cell centers'
+    # %%
         )
         axes[0, 0].set_title('Target: Xenium Morphology Focus')
         axes[0, 0].legend()
@@ -622,22 +623,14 @@ class XeniumMacsimaRegistration:
             axes[1, 0].scatter(
                 dx.obsm['spatial_transformed'][:, 0] - self.bbox[0],
                 dx.obsm['spatial_transformed'][:, 1] - self.bbox[1],
-                color='red', s=5, alpha=0.7
+                c='cyan', s=1, alpha=0.1, label='Cell centers'
             )
         else:
             axes[1, 0].text(0.5, 0.5, 'MACSIMA ROI\nEmpty or Invalid', 
                            ha='center', va='center', transform=axes[1, 0].transAxes)
         
-        # Plot cell boundaries if available
-        if 'cell_boundaries_transformed' in self.xenium_data:
-            for name in list(self.adata.obs_names)[:50]:  # Limit to 50 for clarity
-                if name in self.xenium_data['cell_boundaries_transformed'].index:
-                    poly = self.xenium_data['cell_boundaries_transformed'].loc[name, 'geometry']
-                    if poly is not None:
-                        x, y = poly.exterior.xy
-                        axes[1, 0].plot(x, y, color='cyan', alpha=0.8, linewidth=0.5)
-        
-        axes[1, 0].set_title('Aligned: MACSIMA with Cell Segmentation')
+        axes[1, 0].set_title('Aligned: MACSIMA with Cell Centroids')
+        axes[1, 0].legend()
         axes[1, 0].axis('off')
         
         # Bottom right: Overlay comparison
@@ -669,6 +662,7 @@ class XeniumMacsimaRegistration:
         axes[1, 1].axis('off')
         
         plt.tight_layout()
+
         return fig
 
 
