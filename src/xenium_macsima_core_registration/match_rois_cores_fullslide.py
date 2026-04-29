@@ -259,9 +259,6 @@ for position_adata, roi_macsima in iterover:
     print(f"✓ Affine matrix shape: {affine_2d.shape}")
     print(f"✓ Aligned MACSIMA shape: {aligned_macsima.shape}")
 
-
-
-    # %%
     # Perform image registration
     print("Registering MACSIMA image to morphology focus...")
     affine_2d, affine_2d_full, aligned_macsima = registration.register_images(macsima_img, mf_roi)
@@ -270,9 +267,6 @@ for position_adata, roi_macsima in iterover:
     print(f"✓ Affine matrix shape: {affine_2d.shape}")
     print(f"✓ Aligned MACSIMA shape: {aligned_macsima.shape}")
 
-
-
-    # %%
     # Create aligned spatial data object (without additional images first)
     print("Creating aligned SpatialData object...")
 
@@ -304,7 +298,6 @@ for position_adata, roi_macsima in iterover:
     print("BASIC ALIGNED DATA CREATED SUCCESSFULLY")
     print("="*60)
 
-    # %%
     # Add additional MACSIMA images (start with just a few to test)
     print("Adding additional MACSIMA channel images...")
 
@@ -327,9 +320,6 @@ for position_adata, roi_macsima in iterover:
     print(f"✓ Final image count: {len(aligned_data.images)}")
     print(f"✓ Available images: {list(aligned_data.images.keys())}")
 
-    # %%
-    # Create registration summary plot manually
-    print("Generating registration summary visualization...")
 
     # Get the processed MACSIMA from the aligned data
     print(f"Full aligned MACSIMA shape: {aligned_macsima.shape}")
@@ -339,61 +329,12 @@ for position_adata, roi_macsima in iterover:
     dna_macsima_processed = preprocess_reg(aligned_macsima, SCALE_FACTOR)
     print(f"Processed MACSIMA shape: {dna_macsima_processed.shape}")
 
-    # Create figure with subplots
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle('Xenium-MACSIMA Registration Summary', fontsize=16, fontweight='bold')
-
-    # Top left: Original morphology focus with cell locations
-    axes[0, 0].imshow(mf_roi, cmap='gray')
-    axes[0, 0].scatter(
-        dx.obsm['spatial_transformed'][:, 0] - registration.bbox[0],
-        dx.obsm['spatial_transformed'][:, 1] - registration.bbox[1],
-        color='red', s=3, alpha=0.7, label='Cell centers'
-    )
-    axes[0, 0].set_title('Target: Xenium Morphology Focus')
-    axes[0, 0].legend()
-    axes[0, 0].axis('off')
-
-    # Top right: MACSIMA DAPI
-    axes[0, 1].imshow(dna_macsima_processed, cmap='gray')
-    axes[0, 1].set_title('Source: MACSIMA DAPI (Processed)')
-    axes[0, 1].axis('off')
-
-    # Bottom left: MACSIMA with cell centers
-    axes[1, 0].imshow(dna_macsima_processed, cmap='gray')
-    axes[1, 0].scatter(
-        dx.obsm['spatial_transformed'][:, 0] - registration.bbox[0],
-        dx.obsm['spatial_transformed'][:, 1] - registration.bbox[1],
-        color='cyan', s=3, alpha=0.7, label='Cell centers'
-    )
-    axes[1, 0].set_title('Aligned: MACSIMA with Cell Locations')
-    axes[1, 0].legend()
-    axes[1, 0].axis('off')
-
-    # Bottom right: Create simple overlay
-    # Ensure both images are the same size for overlay
-    min_h = min(mf_roi.shape[0], dna_macsima_processed.shape[0])
-    min_w = min(mf_roi.shape[1], dna_macsima_processed.shape[1])
-
-    # Crop both images to the same size
-    mf_crop = mf_roi[:min_h, :min_w]
-    macsima_crop = dna_macsima_processed[:min_h, :min_w]
-
-    # Normalize images
-    mf_norm = (mf_crop - mf_crop.min()) / (mf_crop.max() - mf_crop.min())
-    macsima_norm = (macsima_crop - macsima_crop.min()) / (macsima_crop.max() - macsima_crop.min())
-
-    # Create RGB overlay
-    overlay = np.zeros((min_h, min_w, 3))
-    overlay[:, :, 0] = macsima_norm  # MACSIMA in red
-    overlay[:, :, 1] = mf_norm       # Morphology focus in green
-
-    axes[1, 1].imshow(overlay)
-    axes[1, 1].set_title('Overlay: Registration Quality\n(Red=MACSIMA, Green=Morphology)')
-    axes[1, 1].axis('off')
-    plt.savefig(f'POS_{POSITION}_registration_summary.png', dpi=300)
-    plt.tight_layout()
-    plt.show()
+    # Create registration summary plot
+    print("Generating registration summary visualization...")
+    summary_figure = registration.create_registration_summary_plot(mf_roi,
+                                                                   dna_macsima_processed,
+                                                                   aligned_data["adata"])
+    summary_figure.savefig(f'POS_{POSITION}_registration_summary.png', dpi=300)
 
     print("✓ Registration summary plot generated successfully!")
     print(f"\nRegistration Quality Assessment:")
