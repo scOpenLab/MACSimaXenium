@@ -218,10 +218,36 @@ class XeniumMacsimaRegistration:
         self.xenium_data['nucleus_boundaries'] = self.xenium_data['nucleus_boundaries'].loc[cell_names]
         
         return self.adata, dx
+        
+    def _resolve_morphology_dapi_path(morphology_dir):
+    """
+    Resolve DAPI morphology focus image for Xenium XOA v3 and v4.
+    """
+    import os
+
+    # Known filenames
+    v3_file = os.path.join(morphology_dir, "morphology_focus_0000.ome.tif")
+    v4_file = os.path.join(morphology_dir, "ch0000_dapi.ome.tif")
+
+    if os.path.exists(v3_file):
+        return v3_file
+
+    if os.path.exists(v4_file):
+        return v4_file
+
+    # Fallback: search for DAPI
+    for f in os.listdir(morphology_dir):
+        f_lower = f.lower()
+        if f_lower.endswith(".ome.tif") and "dapi" in f_lower:
+            return os.path.join(morphology_dir, f)
+
+    raise FileNotFoundError(
+        "Could not find DAPI morphology focus image in morphology_focus/"
+    )
     
     def load_morphology_focus(self, xenium_folder):
         """
-        Load Xenium morphology focus image.
+        Load Xenium morphology focus image (DAPI channel) supporting XOA v3 and v4.
         
         Parameters:
         -----------
@@ -233,9 +259,10 @@ class XeniumMacsimaRegistration:
         dask.array
             Morphology focus image as zarr-backed dask array
         """
-        morphology_path = os.path.join(
-            xenium_folder, 'morphology_focus', 'morphology_focus_0000.ome.tif'
-        )
+        morphology_dir = os.path.join(xenium_folder, "morphology_focus")
+        xenium_morphology_path = _resolve_morphology_dapi_path(morphology_dir)
+
+       
         print(f"Loading morphology focus from {morphology_path}")
 
         mf_img = tifffile.imread(morphology_path, aszarr=True)
@@ -928,10 +955,9 @@ if __name__ == "__main__":
         output_folder,
     ) = get_arguments()
 
-    # Builds the path to the morphology focus images
-    xenium_morphology_path = (
-        xenium_folder + "/morphology_focus/morphology_focus_0000.ome.tif"
-    )
+      # Builds the path to the morphology focus images (v3 + v4 compatible)
+    morphology_dir = os.path.join(xenium_folder, "morphology_focus")
+    xenium_morphology_path = _resolve_morphology_dapi_path(morphology_dir)
 
     FIRST_SCALE_FACTOR = 8
     SECOND_SCALE_FACTOR = 2
