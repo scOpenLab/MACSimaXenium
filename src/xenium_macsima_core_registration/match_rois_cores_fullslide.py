@@ -38,7 +38,6 @@ import os
 import scanpy as sc
 import tifffile
 import matplotlib.pyplot as plt
-import numpy as np
 # Import our custom registration module
 from xenium_macsima_core_registration import XeniumMacsimaRegistration, preprocess_reg
 
@@ -170,7 +169,7 @@ for position_adata, roi_macsima in iterover:
 
     files_mf = os.listdir(macsima_folder)
     files_mf = [f for f in files_mf if 'DAPI' in f and 'C-000' in f]
-    files_mf = [f for f in files_mf if not '_B_' in f]  # Exclude files with '_B_'
+    files_mf = [f for f in files_mf if '_B_' not in f]  # Exclude files with '_B_'
     assert len(files_mf) == 1, f"Expected exactly one DAPI file in MACSIMA folder for ROI {roi_macsima}, but found: {files_mf}"
     dapi_file = files_mf[0]
 
@@ -337,13 +336,12 @@ for position_adata, roi_macsima in iterover:
     summary_figure.savefig(f'POS_{POSITION}_registration_summary.png', dpi=300)
 
     print("✓ Registration summary plot generated successfully!")
-    print(f"\nRegistration Quality Assessment:")
-    print(f"- Red channel: MACSIMA DAPI channel")
-    print(f"- Green channel: Xenium morphology focus")
-    print(f"- Yellow/white regions indicate good alignment")
-    print(f"- Cell centers should align with nuclear structures")
+    print("\nRegistration Quality Assessment:")
+    print("- Red channel: MACSIMA DAPI channel")
+    print("- Green channel: Xenium morphology focus")
+    print("- Yellow/white regions indicate good alignment")
+    print("- Cell centers should align with nuclear structures")
     print(f"- Total cells processed: {dx.n_obs}")
-    print(f"- Overlay region size: {min_h}x{min_w} pixels")
 
     # %%
     # Save the aligned spatial data

@@ -1,5 +1,5 @@
 """
-Module providing registration between Xenium and MACSIMA data
+Module providing registration between Xenium and MACSima data
 Comprehensive pipeline for aligning spatial transcriptomics data with multiplexed imaging data.
 
 Main components:
@@ -10,7 +10,6 @@ Main components:
 5) Multi-modal data integration
 """
 
-import tempfile
 import argparse
 import os
 
@@ -23,7 +22,6 @@ import spatialdata_io
 import zarr
 import numpy as np
 import cv2 as cv
-import pandas as pd
 import spatialdata as sd
 import matplotlib.pyplot as plt
 import scanpy as sc
@@ -34,10 +32,10 @@ from shapely import affinity
 
 class XeniumMacsimaRegistration:
     """
-    Main class for handling Xenium-MACSIMA registration workflow.
+    Main class for handling Xenium-MACSima registration workflow.
     
     This class provides a complete pipeline for aligning Xenium spatial transcriptomics
-    data with MACSIMA multiplexed imaging data, including:
+    data with MACSima multiplexed imaging data, including:
     - Data loading and preprocessing
     - Image registration and alignment
     - Spatial coordinate transformation
@@ -219,31 +217,30 @@ class XeniumMacsimaRegistration:
         
         return self.adata, dx
         
-    def _resolve_morphology_dapi_path(morphology_dir):
-    """
-    Resolve DAPI morphology focus image for Xenium XOA v3 and v4.
-    """
-    import os
+    def _resolve_morphology_dapi_path(self, morphology_dir):
+        """
+        Resolve DAPI morphology focus image for Xenium XOA v3 and v4.
+        """
 
-    # Known filenames
-    v3_file = os.path.join(morphology_dir, "morphology_focus_0000.ome.tif")
-    v4_file = os.path.join(morphology_dir, "ch0000_dapi.ome.tif")
+        # Known filenames
+        v3_file = os.path.join(morphology_dir, "morphology_focus_0000.ome.tif")
+        v4_file = os.path.join(morphology_dir, "ch0000_dapi.ome.tif")
 
-    if os.path.exists(v3_file):
-        return v3_file
+        if os.path.exists(v3_file):
+            return v3_file
 
-    if os.path.exists(v4_file):
-        return v4_file
+        if os.path.exists(v4_file):
+            return v4_file
 
-    # Fallback: search for DAPI
-    for f in os.listdir(morphology_dir):
-        f_lower = f.lower()
-        if f_lower.endswith(".ome.tif") and "dapi" in f_lower:
-            return os.path.join(morphology_dir, f)
+        # Fallback: search for DAPI
+        for f in os.listdir(morphology_dir):
+            f_lower = f.lower()
+            if f_lower.endswith(".ome.tif") and "dapi" in f_lower:
+                return os.path.join(morphology_dir, f)
 
-    raise FileNotFoundError(
-        "Could not find DAPI morphology focus image in morphology_focus/"
-    )
+        raise FileNotFoundError(
+            "Could not find DAPI morphology focus image in morphology_focus/"
+        )
     
     def load_morphology_focus(self, xenium_folder):
         """
@@ -260,9 +257,8 @@ class XeniumMacsimaRegistration:
             Morphology focus image as zarr-backed dask array
         """
         morphology_dir = os.path.join(xenium_folder, "morphology_focus")
-        xenium_morphology_path = _resolve_morphology_dapi_path(morphology_dir)
+        morphology_path = self._resolve_morphology_dapi_path(morphology_dir)
 
-       
         print(f"Loading morphology focus from {morphology_path}")
 
         mf_img = tifffile.imread(morphology_path, aszarr=True)
@@ -273,25 +269,25 @@ class XeniumMacsimaRegistration:
     
     def load_macsima_image(self, macsima_path):
         """
-        Load MACSIMA image.
+        Load MACSima image.
         
         Parameters:
         -----------
         macsima_path : str
-            Path to the MACSIMA TIFF image
+            Path to the MACSima TIFF image
             
         Returns:
         --------
         dask.array
-            MACSIMA image as zarr-backed dask array
+            MACSima image as zarr-backed dask array
         """
-        print(f"Loading MACSIMA image from {macsima_path}")
+        print(f"Loading MACSima image from {macsima_path}")
 
-        mcs_img = tifffile.imread(macsima_path, aszarr=True)
-        mcs_img = zarr.open(mcs_img, mode="r")
-        mcs_img = dask.array.from_zarr(mcs_img["0"])
+        macsima_img = tifffile.imread(macsima_path, aszarr=True)
+        macsima_img = zarr.open(macsima_img, mode="r")
+        macsima_img = dask.array.from_zarr(macsima_img["0"])
 
-        return mcs_img
+        return macsima_img
     
     def calculate_roi_bbox(self, dx):
         """
@@ -341,12 +337,12 @@ class XeniumMacsimaRegistration:
     
     def register_images(self, macsima_img, mf_roi):
         """
-        Register MACSIMA image to morphology focus ROI.
+        Register MACSima image to morphology focus ROI.
         
         Parameters:
         -----------
         macsima_img : dask.array
-            Full MACSIMA image
+            Full MACSima image
         mf_roi : numpy.ndarray
             Morphology focus ROI for registration target
             
@@ -355,7 +351,7 @@ class XeniumMacsimaRegistration:
         tuple
             (affine_matrix_2d, affine_matrix_full, aligned_macsima)
         """
-        print("Preprocessing MACSIMA image for registration")
+        print("Preprocessing MACSima image for registration")
         dna_macsima = preprocess_reg(macsima_img, self.scale_factor)
         
         print("Computing alignment matrix")
@@ -367,7 +363,7 @@ class XeniumMacsimaRegistration:
         affine_2d_full[0, 2] *= self.scale_factor  # Scale Y translation
         affine_2d_full[1, 2] *= self.scale_factor  # Scale X translation
         
-        print("Applying transformation to full MACSIMA image")
+        print("Applying transformation to full MACSima image")
         aligned_macsima = dask_image.ndinterp.affine_transform(
             macsima_img, affine_2d_full, output_shape=macsima_img.shape,
             output_chunks=(1024, 1024) 
@@ -430,7 +426,7 @@ class XeniumMacsimaRegistration:
         Parameters:
         -----------
         aligned_macsima : dask.array
-            Aligned MACSIMA image
+            Aligned MACSima image
         mf_roi : numpy.ndarray, optional
             Morphology focus ROI
         full_mf : numpy.ndarray, optional
@@ -458,7 +454,7 @@ class XeniumMacsimaRegistration:
         set_transformation(aligned_data['cell_boundaries'], Identity(), "global")
         set_transformation(aligned_data['nucleus_boundaries'], Identity(), "global")
         
-        # Add aligned MACSIMA image
+        # Add aligned MACSima image
         macsima_model = Image2DModel.parse(
             dask.array.expand_dims(aligned_macsima, 0),
             c_coords=[0],
@@ -492,25 +488,25 @@ class XeniumMacsimaRegistration:
     
     def add_additional_macsima_images(self, aligned_data, macsima_folder, affine_2d_full, max_images=None):
         """
-        Add additional MACSIMA channel images to the aligned data.
+        Add additional MACSima channel images to the aligned data.
         
         Parameters:
         -----------
         aligned_data : spatialdata.SpatialData
             Aligned spatial data object to add images to
         macsima_folder : str
-            Path to folder containing MACSIMA images
+            Path to folder containing MACSima images
         affine_2d_full : numpy.ndarray
             Full-resolution affine transformation matrix
         max_images : int, optional
             Maximum number of additional images to add. If None, add all images.
         """
-        print(f"Adding additional MACSIMA images (max: {max_images if max_images else 'all'})")
+        print(f"Adding additional MACSima images (max: {max_images if max_images else 'all'})")
         
         try:
             macsima_images = [f for f in os.listdir(macsima_folder) if f.endswith('.tif')]
         except (FileNotFoundError, OSError) as e:
-            print(f"Warning: Could not access MACSIMA folder {macsima_folder}: {e}")
+            print(f"Warning: Could not access MACSima folder {macsima_folder}: {e}")
             return
         
         # Filter out images we don't want to include
@@ -649,7 +645,7 @@ class XeniumMacsimaRegistration:
         mf_roi : numpy.ndarray
             Morphology focus ROI
         aligned_macsima_roi : numpy.ndarray
-            Aligned MACSIMA ROI  
+            Aligned MACSima ROI  
         dx : scanpy.AnnData
             Xenium data table with spatial coordinates
             
@@ -659,7 +655,7 @@ class XeniumMacsimaRegistration:
             Summary figure showing registration quality
         """
         fig, axes = plt.subplots(2, 2, figsize=(12, 12))
-        fig.suptitle('Xenium-MACSIMA Registration Summary', fontsize=16, fontweight='bold')
+        fig.suptitle('Xenium-MACSima Registration Summary', fontsize=16, fontweight='bold')
         
         # Top left: Original morphology focus with cell locations
         axes[0, 0].imshow(mf_roi, cmap='gray')
@@ -673,18 +669,18 @@ class XeniumMacsimaRegistration:
         axes[0, 0].legend()
         axes[0, 0].axis('off')
         
-        # Top right: Original MACSIMA 
+        # Top right: Original MACSima 
         if aligned_macsima_roi.size > 0:
             dna_macsima = preprocess_reg(aligned_macsima_roi, 1)
             axes[0, 1].imshow(dna_macsima, cmap='gray')
-            axes[0, 1].set_title('Source: MACSIMA DAPI')
+            axes[0, 1].set_title('Source: MACSima DAPI')
         else:
-            axes[0, 1].text(0.5, 0.5, 'MACSIMA ROI\nEmpty or Invalid', 
+            axes[0, 1].text(0.5, 0.5, 'MACSima ROI\nEmpty or Invalid', 
                            ha='center', va='center', transform=axes[0, 1].transAxes)
-            axes[0, 1].set_title('Source: MACSIMA DAPI (Empty)')
+            axes[0, 1].set_title('Source: MACSima DAPI (Empty)')
         axes[0, 1].axis('off')
         
-        # Bottom left: Aligned MACSIMA with cell boundaries
+        # Bottom left: Aligned MACSima with cell boundaries
         if aligned_macsima_roi.size > 0:
             axes[1, 0].imshow(dna_macsima, cmap='gray')
             axes[1, 0].scatter(
@@ -693,10 +689,10 @@ class XeniumMacsimaRegistration:
                 c='cyan', s=1, alpha=0.1, label='Cell centers'
             )
         else:
-            axes[1, 0].text(0.5, 0.5, 'MACSIMA ROI\nEmpty or Invalid', 
+            axes[1, 0].text(0.5, 0.5, 'MACSima ROI\nEmpty or Invalid', 
                            ha='center', va='center', transform=axes[1, 0].transAxes)
         
-        axes[1, 0].set_title('Aligned: MACSIMA with Cell Centroids')
+        axes[1, 0].set_title('Aligned: MACSima with Cell Centroids')
         axes[1, 0].legend()
         axes[1, 0].axis('off')
         
@@ -717,15 +713,15 @@ class XeniumMacsimaRegistration:
             mf_norm = (mf_crop - mf_crop.min()) / (mf_crop.max() - mf_crop.min())
             macsima_norm = (macsima_crop - macsima_crop.min()) / (macsima_crop.max() - macsima_crop.min())
             
-            overlay[:, :, 0] = macsima_norm  # MACSIMA in red
+            overlay[:, :, 0] = macsima_norm  # MACSima in red
             overlay[:, :, 1] = mf_norm       # Morphology focus in green
             
             axes[1, 1].imshow(overlay)
-            axes[1, 1].set_title('Overlay: Registration Quality\n(Red=MACSIMA, Green=Morphology)')
+            axes[1, 1].set_title('Overlay: Registration Quality\n(Red=MACSima, Green=Morphology)')
         else:
             # Show just the morphology focus
             axes[1, 1].imshow(mf_roi, cmap='gray')
-            axes[1, 1].set_title('Morphology Focus Only\n(MACSIMA ROI Empty)')
+            axes[1, 1].set_title('Morphology Focus Only\n(MACSima ROI Empty)')
         axes[1, 1].axis('off')
         
         plt.tight_layout()
@@ -939,160 +935,3 @@ def save_crop(index, bounding_boxes, cropped_xenium, out_folder):
     except AttributeError as err:
         print(err)
 
-
-if __name__ == "__main__":
-    (
-        xenium_folder,
-        MACsima_tiff,
-        MACsima_channels_path,
-        bounding_boxes_path,
-        output_folder,
-    ) = get_arguments()
-
-      # Builds the path to the morphology focus images (v3 + v4 compatible)
-    morphology_dir = os.path.join(xenium_folder, "morphology_focus")
-    xenium_morphology_path = _resolve_morphology_dapi_path(morphology_dir)
-
-    FIRST_SCALE_FACTOR = 8
-    SECOND_SCALE_FACTOR = 2
-
-    # Read in the bounding boxes for each core
-    # core_id	x_min	x_max	y_min	y_max
-    # coordinates in nm
-    print("Reading bounding boxes")
-    bboxes = pd.read_csv(bounding_boxes_path)
-    bboxes.iloc[:, 1:] = (bboxes.iloc[:, 1:] / 0.212).astype(int)  # 1px = 212nm
-    bboxes.iloc[:, 0] = bboxes.iloc[:, 0].astype(int) 
-    total_cores = len(bboxes)
-
-    # Read in:
-    # - Transcripts
-    # - Cell labels
-    # - Cell boundaries
-    # - Feature matrix
-    print("Reading Xenium Data")
-    xenium_data = spatialdata_io.xenium(
-        xenium_folder,
-        cells_boundaries=True,
-        nucleus_boundaries=False,
-        cells_as_circles=False,
-        cells_labels=True,
-        nucleus_labels=False,
-        transcripts=True,
-        morphology_mip=False,
-        morphology_focus=False,
-        aligned_images=False,
-        cells_table=True,
-        n_jobs=8,
-    )
-
-    # Clean up the transcripts
-    # Not transcripts to be discarded
-    print("Cleaning up Xenium Transcripts")
-    not_genes = [
-        "deprecated_codeword",
-        "negative_control_probe",
-        "genomic_control_probe",
-        "negative_control_codeword",
-        "unassigned_codeword",
-    ]
-    # Columns to be discarded from the transcript table
-    columns_to_drop = [
-        "z",
-        "fov_name",
-        "nucleus_distance",
-        "codeword_index",
-        "codeword_category",
-        "is_gene",
-        "transcript_id",
-        "overlaps_nucleus",
-    ]
-    # Get rid of unwanted rows and columns
-    xenium_data["transcripts"] = xenium_data["transcripts"][
-        ~xenium_data["transcripts"].isin(not_genes)
-    ]
-    xenium_data["transcripts"] = xenium_data["transcripts"].drop(
-        columns=columns_to_drop
-    )
-    xenium_data["transcripts"] = xenium_data["transcripts"][
-        xenium_data["transcripts"].feature_name.notnull()
-    ]
-    # Repartitionon the dask array for efficiency
-    print("Repartitioning Xenium Transcripts")
-    xenium_data["transcripts"] = xenium_data["transcripts"].repartition(
-        partition_size="100MB"
-    )
-
-    # Write out and then read back in the repartitioned SpatialData object
-    xenium_rewrite_folder = tempfile.TemporaryDirectory()
-    xenium_rewrite_path = xenium_rewrite_folder.name + "/" + "sd.zarr"
-    print(f"Writing out repartitioned data to {xenium_rewrite_path}")
-    xenium_data.write(xenium_rewrite_path, overwrite=True, consolidate_metadata=True)
-    # Use the new optimized SpatialData object
-    print("Reading back repartitioned data")
-    xenium_data = sd.read_zarr(xenium_rewrite_path)
-
-    # Read the MACsima image converted to zarr as:
-    print("Reading MACsima image")
-    
-    cx_img = tifffile.imread(MACsima_tiff, aszarr=True)
-    cx_img = zarr.open(cx_img, mode="r")
-    cx_img = dask.array.from_zarr(cx_img["0"])
-    cx_img = dask.array.flip(cx_img, (1, 2))
-
-    # Read the MACsima channel list
-    print("Reading MACsima channel list")
-    with open(MACsima_channels_path, encoding="utf-8") as cc_file:
-        cx_channels = [c.strip() for c in cc_file.readlines()]
-
-    # Read one of the xenium morphology focus images as zarr:
-    print("Reading xenium morphology focus")
-    mf_channels = ["DAPI", "ATP1A1/CD45/E-Cadherin", "18S", "alphaSMA/Vimentin"]
-    mf_img = tifffile.imread(xenium_morphology_path, aszarr=True)
-    mf_img = zarr.open(mf_img, mode="r")
-    mf_img = dask.array.from_zarr(mf_img["0"])
-
-    # First round for a coarse registration, allows to crop the MACsima using Xenium cooordinates
-    # Downscaling MACsima DAPI
-    print("Reading MACsima preprocessing")
-    dna_MACsima = preprocess_reg(cx_img[0, ...], FIRST_SCALE_FACTOR)
-    # Downscaling Xenium Morphology focus DAPI
-    print("Reading xenium morphology focus preprocessing")
-    dna_mf = preprocess_reg(mf_img[0, ...], FIRST_SCALE_FACTOR)
-    # Get the affine transform and perform the registration
-    print("Getting registration matrix")
-    aff_cyx = get_align_matrix(dna_MACsima, dna_mf, scale_factor=FIRST_SCALE_FACTOR)
-    print("Coarse registration")
-    rcx_img = dask_image.ndinterp.affine_transform(
-        cx_img,
-        aff_cyx,
-        output_shape=(cx_img.shape[0], *mf_img[0, ...].shape),
-        output_chunks=(1, 1024, 1024),
-    )
-
-    # Process each core:
-    for i in range(0, len(bboxes)):
-        print(f"Processing core {i}/{total_cores}")
-        # Crop the images and the Xenium data
-        print("Cropping")
-        crop_cx, crop_mf, crop_xenium = get_crops(
-            i, bboxes, xenium_data, rcx_img, mf_img
-        )
-        # Realign the images, add them to the cropped object, and fix their transforms
-        print("Registering crop")
-        crop_xenium = process_crops(
-            crop_cx,
-            crop_mf,
-            crop_xenium,
-            cx_channels,
-            mf_channels,
-            scale_factor=SECOND_SCALE_FACTOR,
-        )
-        print("Saving crop")
-        save_crop(i, bboxes, crop_xenium, output_folder)
-        print(f"Processed core {i+1}")
-
-    # Remove the repartitioned SpatialData object
-    print("Cleanup")
-    xenium_rewrite_folder.cleanup()
-    print("Done")
