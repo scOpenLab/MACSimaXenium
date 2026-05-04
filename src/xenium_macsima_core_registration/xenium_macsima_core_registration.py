@@ -1,5 +1,5 @@
 """
-Module providing registration between Xenium and MACSIMA/CODEX data
+Module providing registration between Xenium and MACSIMA data
 Comprehensive pipeline for aligning spatial transcriptomics data with multiplexed imaging data.
 
 Main components:
@@ -102,8 +102,48 @@ class XeniumMacsimaRegistration:
         Parameters:
         -----------
         xenium_folder : str
-            Path to the Xenium output folder
-            
+            Path to the Xenium output folder with: 
+            'experiment.xenium': File containing specifications.
+            'nucleus_boundaries.parquet': Polygons of nucleus boundaries.
+            'cell_boundaries.parquet': Polygons of cell boundaries.
+            'transcripts.parquet': File containing transcripts.
+            'cell_feature_matrix.h5': File containing cell feature matrix.
+            'cells.parquet': File containing cell metadata.
+            'morphology_mip.ome.tif': File containing morphology mip.
+            'morphology_focus.ome.tif': File containing morphology focus 
+        cells_bounderies : bool (default: True)
+            Load full cell segmentation boundaries (polygons)
+        nucleus bounderies: bool (default: True)
+             Load nucleus segmentation boundaries (polygons)
+        cells_as_circles: bool | None (default: None)
+            Use real cell shapes (False) instead of approximated circles 
+            (the center and the radius of each circle is computed from the corresponding
+            labels cell: True)
+        cells_labels: bool (default: True)
+            Load labeled cell segmentation mask (raster). 
+            The polygonal version of the cell labels are simplified for visualization 
+            purposes, and using the raster version is recommended for analysis.
+        nucleus_labels: bool (default: True)
+            Load nucleus label mask (raster). Same recommendations as 'cell_lables'
+        transcripts: bool (default: True)
+            Load transcript-level data (molecule coordinates)
+        morphology_mip: bool (default: True)
+            Load morphology mip (maximum intensity projection image) image 
+            (available in versions < 2.0.0).
+        morphology_focus: bool (default: True) 
+            Load morphology focus image (often large)
+            DAPI + segmentaion images and/or Protein panel (proteomics)
+        aligned_images: bool (default: True)
+            Align, when available, additional H&E or IF aligned images. 
+            For more control over the aligned images being read, set to False to specify the axes
+            of the aligned images and use the xenium_aligned_image function directly.
+        cells_table: bool (default: True)
+            Load cell feature table (gene counts per cell: AnnData)
+        n_jobs: int (default: 1)
+            Number of jobs to use for parallel processing
+
+
+        
         Returns:
         --------
         spatialdata.SpatialData
@@ -178,10 +218,36 @@ class XeniumMacsimaRegistration:
         self.xenium_data['nucleus_boundaries'] = self.xenium_data['nucleus_boundaries'].loc[cell_names]
         
         return self.adata, dx
+        
+    def _resolve_morphology_dapi_path(morphology_dir):
+    """
+    Resolve DAPI morphology focus image for Xenium XOA v3 and v4.
+    """
+    import os
+
+    # Known filenames
+    v3_file = os.path.join(morphology_dir, "morphology_focus_0000.ome.tif")
+    v4_file = os.path.join(morphology_dir, "ch0000_dapi.ome.tif")
+
+    if os.path.exists(v3_file):
+        return v3_file
+
+    if os.path.exists(v4_file):
+        return v4_file
+
+    # Fallback: search for DAPI
+    for f in os.listdir(morphology_dir):
+        f_lower = f.lower()
+        if f_lower.endswith(".ome.tif") and "dapi" in f_lower:
+            return os.path.join(morphology_dir, f)
+
+    raise FileNotFoundError(
+        "Could not find DAPI morphology focus image in morphology_focus/"
+    )
     
     def load_morphology_focus(self, xenium_folder):
         """
-        Load Xenium morphology focus image.
+        Load Xenium morphology focus image (DAPI channel) supporting XOA v3 and v4.
         
         Parameters:
         -----------
@@ -193,9 +259,10 @@ class XeniumMacsimaRegistration:
         dask.array
             Morphology focus image as zarr-backed dask array
         """
-        morphology_path = os.path.join(
-            xenium_folder, 'morphology_focus', 'morphology_focus_0000.ome.tif'
-        )
+        morphology_dir = os.path.join(xenium_folder, "morphology_focus")
+        xenium_morphology_path = _resolve_morphology_dapi_path(morphology_dir)
+
+       
         print(f"Loading morphology focus from {morphology_path}")
 
         mf_img = tifffile.imread(morphology_path, aszarr=True)
@@ -206,7 +273,7 @@ class XeniumMacsimaRegistration:
     
     def load_macsima_image(self, macsima_path):
         """
-        Load MACSIMA/CODEX image.
+        Load MACSIMA image.
         
         Parameters:
         -----------
@@ -775,34 +842,34 @@ def get_arguments():
     Assumes 5 and returns 5 positional command line arguments:
     """
     parser = argparse.ArgumentParser(
-        description="Aligns CODEX to Xenium and saves SpatialData objects"
+        description="Aligns MACsima to Xenium and saves SpatialData objects"
     )
     parser.add_argument("xenium_folder", help="path to the xenium folder")
-    parser.add_argument("codex_tiff", help="path to the CODEX image in tiff format")
+    parser.add_argument("MACsima_tiff", help="path to the MACsima image in tiff format")
     parser.add_argument(
-        "codex_channels", help="path to the txt file with the list of codex channels"
+        "MACsima_channels", help="path to the txt file with the list of MACsima channels"
     )
     parser.add_argument("bounding_boxes", help="path to the bounding boxes csv file")
     parser.add_argument("output_folder", help="path to the output folder")
     args = parser.parse_args()
     return (
         args.xenium_folder,
-        args.codex_tiff,
-        args.codex_channels,
+        args.MACsima_tiff,
+        args.MACsima_channels,
         args.bounding_boxes,
         args.output_folder,
     )
 
 
-def get_crops(index, bounding_boxes, xenium, codex_img, xenium_img):
+def get_crops(index, bounding_boxes, xenium, MACsima_img, xenium_img):
     """
-    Crops the aligned SpatialData object, the codex and morphology focus images
+    Crops the aligned SpatialData object, the MACsima and morphology focus images
     """
     max_x = bounding_boxes.loc[index].x_max
     max_y = bounding_boxes.loc[index].y_max
     min_x = bounding_boxes.loc[index].x_min
     min_y = bounding_boxes.loc[index].y_min
-    crop_codex_img = codex_img[:, min_y:max_y, min_x:max_x]  # Codex
+    crop_MACsima_img = MACsima_img[:, min_y:max_y, min_x:max_x]  # MACsima
     crop_xenium_img = xenium_img[:, min_y:max_y, min_x:max_x]  # Xenium
     cropped_xenium = sd.bounding_box_query(
         xenium,
@@ -814,37 +881,37 @@ def get_crops(index, bounding_boxes, xenium, codex_img, xenium_img):
     cropped_xenium["cell_labels"] = cropped_xenium["cell_labels"].chunk(
         chunks={"y": 1024, "x": 1024}
     )
-    # Codex, Xenium mf, Xenium data
-    return crop_codex_img, crop_xenium_img, cropped_xenium
+    # MACsima, Xenium mf, Xenium data
+    return crop_MACsima_img, crop_xenium_img, cropped_xenium
 
 
 def process_crops(
-    crop_codex, crop_xmf, cropped_xenium, codex_channels, xmf_channels, scale_factor
+    crop_MACsima, crop_xmf, cropped_xenium, MACsima_channels, xmf_channels, scale_factor
 ):
     """
-    Align the cropped codex and morphology focus images, and adds them to the SpatialData object
+    Align the cropped MACsima and morphology focus images, and adds them to the SpatialData object
     """
-    crop_cx_dna = preprocess_reg(crop_codex[0, ...], scale_factor)
+    crop_cx_dna = preprocess_reg(crop_MACsima[0, ...], scale_factor)
     crop_mf_dna = preprocess_reg(crop_xmf[0, ...], scale_factor)
 
     crop_affine_cyx = get_align_matrix(crop_cx_dna, crop_mf_dna, scale_factor)
     rrcx = dask_image.ndinterp.affine_transform(
-        crop_codex, crop_affine_cyx, output_shape=crop_codex.shape
+        crop_MACsima, crop_affine_cyx, output_shape=crop_MACsima.shape
     )
 
     crop_translation = sd.transformations.get_transformation(
         cropped_xenium["cell_labels"]
     )
 
-    codex = Image2DModel()
-    codex = codex.parse(
+    MACsima = Image2DModel()
+    MACsima = MACsima.parse(
         rrcx,
-        c_coords=codex_channels,
+        c_coords=MACsima_channels,
         scale_factors=[2, 2, 2, 2],
         transformations={"global": crop_translation},
     )
-    Image2DModel().validate(codex)
-    cropped_xenium["codex"] = codex
+    Image2DModel().validate(MACsima)
+    cropped_xenium["MACsima"] = MACsima
 
     xenium_mf = Image2DModel()
     xenium_mf = xenium_mf.parse(
@@ -876,16 +943,15 @@ def save_crop(index, bounding_boxes, cropped_xenium, out_folder):
 if __name__ == "__main__":
     (
         xenium_folder,
-        codex_tiff,
-        codex_channels_path,
+        MACsima_tiff,
+        MACsima_channels_path,
         bounding_boxes_path,
         output_folder,
     ) = get_arguments()
 
-    # Builds the path to the morphology focus images
-    xenium_morphology_path = (
-        xenium_folder + "/morphology_focus/morphology_focus_0000.ome.tif"
-    )
+      # Builds the path to the morphology focus images (v3 + v4 compatible)
+    morphology_dir = os.path.join(xenium_folder, "morphology_focus")
+    xenium_morphology_path = _resolve_morphology_dapi_path(morphology_dir)
 
     FIRST_SCALE_FACTOR = 8
     SECOND_SCALE_FACTOR = 2
@@ -966,17 +1032,17 @@ if __name__ == "__main__":
     print("Reading back repartitioned data")
     xenium_data = sd.read_zarr(xenium_rewrite_path)
 
-    # Read the codex image converted to zarr as:
-    print("Reading CODEX image")
+    # Read the MACsima image converted to zarr as:
+    print("Reading MACsima image")
     
-    cx_img = tifffile.imread(codex_tiff, aszarr=True)
+    cx_img = tifffile.imread(MACsima_tiff, aszarr=True)
     cx_img = zarr.open(cx_img, mode="r")
     cx_img = dask.array.from_zarr(cx_img["0"])
     cx_img = dask.array.flip(cx_img, (1, 2))
 
-    # Read the CODEX channel list
-    print("Reading CODEX channel list")
-    with open(codex_channels_path, encoding="utf-8") as cc_file:
+    # Read the MACsima channel list
+    print("Reading MACsima channel list")
+    with open(MACsima_channels_path, encoding="utf-8") as cc_file:
         cx_channels = [c.strip() for c in cc_file.readlines()]
 
     # Read one of the xenium morphology focus images as zarr:
@@ -986,16 +1052,16 @@ if __name__ == "__main__":
     mf_img = zarr.open(mf_img, mode="r")
     mf_img = dask.array.from_zarr(mf_img["0"])
 
-    # First round for a coarse registration, allows to crop the CODEX using Xenium cooordinates
-    # Downscaling CODEX DAPI
-    print("Reading CODEX preprocessing")
-    dna_codex = preprocess_reg(cx_img[0, ...], FIRST_SCALE_FACTOR)
+    # First round for a coarse registration, allows to crop the MACsima using Xenium cooordinates
+    # Downscaling MACsima DAPI
+    print("Reading MACsima preprocessing")
+    dna_MACsima = preprocess_reg(cx_img[0, ...], FIRST_SCALE_FACTOR)
     # Downscaling Xenium Morphology focus DAPI
     print("Reading xenium morphology focus preprocessing")
     dna_mf = preprocess_reg(mf_img[0, ...], FIRST_SCALE_FACTOR)
     # Get the affine transform and perform the registration
     print("Getting registration matrix")
-    aff_cyx = get_align_matrix(dna_codex, dna_mf, scale_factor=FIRST_SCALE_FACTOR)
+    aff_cyx = get_align_matrix(dna_MACsima, dna_mf, scale_factor=FIRST_SCALE_FACTOR)
     print("Coarse registration")
     rcx_img = dask_image.ndinterp.affine_transform(
         cx_img,
