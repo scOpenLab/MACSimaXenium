@@ -663,7 +663,6 @@ class XeniumMacsimaRegistration:
             dx.obsm['spatial_transformed'][:, 0] - self.bbox[0],
             dx.obsm['spatial_transformed'][:, 1] - self.bbox[1],
             color='red', s=1, alpha=0.1, label='Cell centers'
-    # %%
         )
         axes[0, 0].set_title('Target: Xenium Morphology Focus')
         axes[0, 0].legend()
@@ -831,7 +830,6 @@ def get_align_matrix(img1, img2, scale_factor=1):
     return affine_cyx
 
 
-# Legacy functions for backward compatibility
 def get_arguments():
     """
     Parses and checks command line arguments, and provides an help text.
@@ -840,22 +838,18 @@ def get_arguments():
     parser = argparse.ArgumentParser(
         description="Aligns MACsima to Xenium and saves SpatialData objects"
     )
-    parser.add_argument("xenium_folder", help="path to the xenium folder")
-    parser.add_argument("MACsima_tiff", help="path to the MACsima image in tiff format")
+    parser.add_argument("xenium_folder", help="path to the Xenium folder")
     parser.add_argument(
-        "MACsima_channels", help="path to the txt file with the list of MACsima channels"
+        "adata_path", help="path to the adata folder with the annotated Xenium cells"
     )
-    parser.add_argument("bounding_boxes", help="path to the bounding boxes csv file")
+    parser.add_argument("roi_map_file", help="path to the roi map csv file")
+    parser.add_argument("slide_name", help="MACSima slide name")
+    parser.add_argument("macsima_folder", help="path to the MACSima ROI folder")
+    parser.add_argument("scale_factor", help="Scale Factor for downsampling")
     parser.add_argument("output_folder", help="path to the output folder")
     args = parser.parse_args()
-    return (
-        args.xenium_folder,
-        args.MACsima_tiff,
-        args.MACsima_channels,
-        args.bounding_boxes,
-        args.output_folder,
-    )
-
+    args.scale_factor = int(args.scale_factor)
+    return args
 
 def get_crops(index, bounding_boxes, xenium, MACsima_img, xenium_img):
     """
