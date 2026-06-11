@@ -61,7 +61,8 @@ position_roi_map = pd.read_csv(roi_map_file)
 position_roi_map = {str(position_roi_map["xenium"][i]):str(position_roi_map["macsima"][i]) 
                     for i in position_roi_map["xenium"].keys()}
 dat.obs['roi_index'] = dat.obs.position.map(position_roi_map)
-dat.obs.roi_index = dat.obs.roi_index.replace({np.nan: None})
+#dat.obs.roi_index = dat.obs.roi_index.replace({np.nan: None})
+print(dat.obs.roi_index[dat.obs.roi_index.notnull()])
 
 # Plot ROI mapping
 ax = sc.pl.embedding(
