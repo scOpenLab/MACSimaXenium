@@ -220,30 +220,29 @@ class XeniumMacsimaRegistration:
         return self.adata, dx
         
     def _resolve_morphology_dapi_path(morphology_dir):
-    """
-    Resolve DAPI morphology focus image for Xenium XOA v3 and v4.
-    """
-    import os
+        """
+        Resolve DAPI morphology focus image for Xenium XOA v3 and v4.
+        """
 
-    # Known filenames
-    v3_file = os.path.join(morphology_dir, "morphology_focus_0000.ome.tif")
-    v4_file = os.path.join(morphology_dir, "ch0000_dapi.ome.tif")
+        # Known filenames
+        v3_file = os.path.join(morphology_dir, "morphology_focus_0000.ome.tif")
+        v4_file = os.path.join(morphology_dir, "ch0000_dapi.ome.tif")
 
-    if os.path.exists(v3_file):
-        return v3_file
+        if os.path.exists(v3_file):
+            return v3_file
 
-    if os.path.exists(v4_file):
-        return v4_file
+        if os.path.exists(v4_file):
+            return v4_file
 
-    # Fallback: search for DAPI
-    for f in os.listdir(morphology_dir):
-        f_lower = f.lower()
-        if f_lower.endswith(".ome.tif") and "dapi" in f_lower:
-            return os.path.join(morphology_dir, f)
+        # Fallback: search for DAPI
+        for f in os.listdir(morphology_dir):
+            f_lower = f.lower()
+            if f_lower.endswith(".ome.tif") and "dapi" in f_lower:
+                return os.path.join(morphology_dir, f)
 
-    raise FileNotFoundError(
-        "Could not find DAPI morphology focus image in morphology_focus/"
-    )
+        raise FileNotFoundError(
+            "Could not find DAPI morphology focus image in morphology_focus/"
+        )
     
     def load_morphology_focus(self, xenium_folder):
         """
@@ -835,7 +834,6 @@ def get_align_matrix(img1, img2, scale_factor=1):
     return affine_cyx
 
 
-# Legacy functions for backward compatibility
 def get_arguments():
     """
     Parses and checks command line arguments, and provides an help text.
@@ -844,22 +842,18 @@ def get_arguments():
     parser = argparse.ArgumentParser(
         description="Aligns MACsima to Xenium and saves SpatialData objects"
     )
-    parser.add_argument("xenium_folder", help="path to the xenium folder")
-    parser.add_argument("MACsima_tiff", help="path to the MACsima image in tiff format")
+    parser.add_argument("xenium_folder", help="path to the Xenium folder")
     parser.add_argument(
-        "MACsima_channels", help="path to the txt file with the list of MACsima channels"
+        "adata_path", help="path to the adata folder with the annotated Xenium cells"
     )
-    parser.add_argument("bounding_boxes", help="path to the bounding boxes csv file")
+    parser.add_argument("roi_map_file", help="path to the roi map csv file")
+    parser.add_argument("slide_name", help="MACSima slide name")
+    parser.add_argument("macsima_folder", help="path to the MACSima ROI folder")
+    parser.add_argument("scale_factor", help="Scale Factor for downsampling")
     parser.add_argument("output_folder", help="path to the output folder")
     args = parser.parse_args()
-    return (
-        args.xenium_folder,
-        args.MACsima_tiff,
-        args.MACsima_channels,
-        args.bounding_boxes,
-        args.output_folder,
-    )
-
+    args.scale_factor = int(args.scale_factor)
+    return args
 
 def get_crops(index, bounding_boxes, xenium, MACsima_img, xenium_img):
     """
