@@ -42,9 +42,6 @@ dat = sc.read_h5ad(adata_path)
 dat = dat[(dat.obs['slide'] == slide_name) & dat.obs["is_in_core"]].copy()
 dat.obs.position = dat.obs.position.astype(str)
 
-print(dat.obs.position)
-
-
 ax = sc.pl.embedding(
     dat,
     basis='spatial',
@@ -101,7 +98,7 @@ for position_adata, roi_macsima in position_roi_map.items():
     files_mf = [f for f in files_mf if 'DAPI' in f and 'C-000' in f]
     files_mf = [f for f in files_mf if '_B_' not in f]  # Exclude files with '_B_'
     print(f"DAPI Files in MACSIMA folder for ROI {roi_macsima}: {files_mf} using the first one.")
-
+    assert len(files_mf) == 1, f"Expected exactly one DAPI file in MACSIMA folder for ROI {roi_macsima}, but found: {files_mf}"
     dapi_file = files_mf[0]
     macsima_image = os.path.join(macsima_folder, dapi_file)
 
@@ -121,40 +118,39 @@ for position_adata, roi_macsima in position_roi_map.items():
         position=position_adata
     )
     # Display basic information about the data
-    print(f"✓ Loaded {adata.n_obs} cells from slide {slide_name}")
-    print(f"✓ Filtered to position {position_adata}: {adata.obs['highlight'].value_counts()}")
+    print(f"Loaded {adata.n_obs} cells from slide {slide_name}")
+    print(f"Filtered to position {position_adata}: {adata.obs['highlight'].value_counts()}")
     print(f"Data dimensions: {adata.shape}")
     print(f"Available observations: {list(adata.obs.columns[:10])}...")  # Show first 10 columns
 
     # Align data tables
     print("Aligning annotated data with Xenium table...")
     adata_filtered, dx = registration.align_data_tables()
-    print(f"✓ Aligned data shapes - AnnData: {adata_filtered.shape}, Xenium table: {dx.shape}")
-    print(f"✓ Spatial coordinates set: {adata_filtered.obsm['spatial'].shape}")
+    print(f"Aligned data shapes - AnnData: {adata_filtered.shape}, Xenium table: {dx.shape}")
+    print(f"Spatial coordinates set: {adata_filtered.obsm['spatial'].shape}")
 
 
     # Load MACSIMA image
     print("Loading MACSIMA image...")
     macsima_img = registration.load_macsima_image(macsima_image)
-    print(f"✓ MACSIMA image shape: {macsima_img.shape}")
+    print(f"MACSIMA image shape: {macsima_img.shape}")
 
     # Calculate ROI bounding box
     print("Calculating ROI bounding box...")
     bbox = registration.calculate_roi_bbox(dx)
-    print(f"✓ ROI bounding box: x=({bbox[0]:.1f}, {bbox[2]:.1f}), y=({bbox[1]:.1f}, {bbox[3]:.1f})")
+    print(f"ROI bounding box: x=({bbox[0]:.1f}, {bbox[2]:.1f}), y=({bbox[1]:.1f}, {bbox[3]:.1f})")
 
     # Extract ROI from morphology focus
     print("Extracting ROI from morphology focus...")
     mf_roi = registration.extract_roi_from_morphology(mf_img, bbox)
-    print(f"✓ Morphology focus ROI shape: {mf_roi.shape}")
+    print(f"Morphology focus ROI shape: {mf_roi.shape}")
 
     # Perform image registration
     print("Registering MACSIMA image to morphology focus...")
     affine_2d, affine_2d_full, aligned_macsima = registration.register_images(macsima_img, mf_roi)
 
-    print("✓ Registration completed successfully")
-    print(f"✓ Affine matrix shape: {affine_2d.shape}")
-    print(f"✓ Aligned MACSIMA shape: {aligned_macsima.shape}")
+    print("Registration completed successfully")
+    print(f"Aligned MACSIMA shape: {aligned_macsima.shape}")
 
     # Create aligned spatial data object (without additional images first)
     print("Creating aligned SpatialData object...")
@@ -173,19 +169,17 @@ for position_adata, roi_macsima in position_roi_map.items():
         full_mf=full_mf_roi
     )
 
-    print(f"✓ Created basic aligned data with images: {list(aligned_data.images.keys())}")
-    print(f"✓ Created basic aligned data with shapes: {list(aligned_data.shapes.keys())}")
+    print(f"Created basic aligned data with images: {list(aligned_data.images.keys())}")
+    print(f"Created basic aligned data with shapes: {list(aligned_data.shapes.keys())}")
 
     # Add cell table and transcripts first (lighter operation)
     print("Adding cell table and transcripts...")
     registration.add_table_and_transcripts(aligned_data, dx)
 
-    print(f"✓ Added table with {aligned_data.tables['adata'].n_obs} cells")
-    print(f"✓ Added {len(aligned_data['transcripts'])} transcripts")
+    print(f"Added table with {aligned_data.tables['adata'].n_obs} cells")
+    print(f"Added {len(aligned_data['transcripts'])} transcripts")
 
-    print("\n" + "="*60)
     print("BASIC ALIGNED DATA CREATED SUCCESSFULLY")
-    print("="*60)
 
     # Add additional MACSIMA images (start with just a few to test)
     print("Adding additional MACSIMA channel images...")
@@ -198,13 +192,13 @@ for position_adata, roi_macsima in position_roi_map.items():
             affine_2d_full, 
             max_images=None
         )
-        print(f"✓ Successfully added additional images. Total images: {len(aligned_data.images)}")
+        print(f"Successfully added additional images. Total images: {len(aligned_data.images)}")
     except Exception as e:
-        print(f"⚠ Warning: Could not add additional images: {e}")
+        print(f"Warning: Could not add additional images: {e}")
         print("Continuing without additional MACSIMA images...")
 
-    print(f"✓ Final image count: {len(aligned_data.images)}")
-    print(f"✓ Available images: {list(aligned_data.images.keys())}")
+    print(f"Final image count: {len(aligned_data.images)}")
+    print(f"Available images: {list(aligned_data.images.keys())}")
 
 
     # Get the processed MACSIMA from the aligned data
@@ -219,7 +213,7 @@ for position_adata, roi_macsima in position_roi_map.items():
                                                                    dna_macsima_processed,
                                                                    aligned_data["adata"])
     summary_figure.savefig(os.path.join(output_path, f'POS_{position_adata}_registration_summary.png'), dpi=300)
-    print("✓ Registration summary plot generated successfully!")
+    print("Registration summary plot generated successfully!")
 
     # Save the aligned spatial data
     sdata_output_path = os.path.join(output_path, f'Pos_{position_adata}_ROI_{roi_macsima}.zarr')
@@ -230,19 +224,16 @@ for position_adata, roi_macsima in position_roi_map.items():
         consolidate_metadata=True,
     )
 
-    print("✓ Successfully saved aligned spatial data!")
-    print(f"✓ Output location: {sdata_output_path}")
+    print("Successfully saved aligned spatial data!")
+    print(f"Output location: {sdata_output_path}")
 
-    # Print summary of final results
     print("\n" + "="*60)
     print("REGISTRATION COMPLETED SUCCESSFULLY")
-    print("="*60)
-    print(f"• Processed slide: {slide_name}")
-    print(f"• ROI position: {position_adata}")
-    print(f"• Cells analyzed: {adata_filtered.n_obs}")
-    print(f"• Images aligned: {len(aligned_data.images)}")
-    print(f"• Transcripts included: {len(aligned_data['transcripts'])}")
-    print(f"• Output saved to: {output_path}")
-    print("="*60)
+    print(f"Processed slide: {slide_name}")
+    print(f"ROI position: {position_adata}")
+    print(f"Cells analyzed: {adata_filtered.n_obs}")
+    print(f"Images aligned: {len(aligned_data.images)}")
+    print(f"Transcripts included: {len(aligned_data['transcripts'])}")
+    print(f"Output saved to: {output_path}")
 
 
