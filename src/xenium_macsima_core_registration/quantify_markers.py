@@ -1,63 +1,10 @@
-
-# bsub -R "rusage[mem=200G]" -q verylong -oo /omics/odcf/analysis/OE0260_projects/spatial/jakob/registration_xenium_macsima_amplify/Slide1/02_Quantify_markes.log \
-# bash -c 'source /omics/groups/OE0260/internal/jakob/miniforge-pypy3/bin/activate && conda activate /home/j548r/mamba_envs/spatial && python /omics/odcf/analysis/OE0260_projects/spatial/jakob/registration_xenium_macsima_amplify/Slide1/02_Quantify_markes.py '
-
-import spatialdata_io
+import os
 import spatialdata as sd
 import numpy as np
 import pandas as pd
 import xarray as xr
 import dask.array as da
-import zarr
-import anndata as ad
-import scanpy as sc
-#import squidpy as sq
-import matplotlib.pyplot as plt
-import os
-import xarray as xr
-import dask.array as da
 from skimage.draw import polygon as draw_polygon
-
-
-def pad_images_to_common_extent(sdata, fill_value=0, max_chunk=4096):
-    images_items = [
-        (key, img)
-        for key, img in sdata.images.items()
-        if isinstance(img, xr.DataArray) and 'y' in img.dims and 'x' in img.dims
-    ]
-    if not images_items:
-        return
-
-    # choose reference image with the largest spatial extent
-    ref_key, ref_img = max(images_items, key=lambda kv: (kv[1].sizes.get('y', 0), kv[1].sizes.get('x', 0)))
-    target_y = ref_img.sizes['y']
-    target_x = ref_img.sizes['x']
-    target_y_coords = ref_img.coords['y'].values
-    target_x_coords = ref_img.coords['x'].values
-
-    for key, img in images_items:
-        pad_spec = {}
-        if img.sizes['y'] < target_y:
-            pad_spec['y'] = (0, target_y - img.sizes['y'])
-        if img.sizes['x'] < target_x:
-            pad_spec['x'] = (0, target_x - img.sizes['x'])
-
-        padded = img.pad(pad_spec, mode='constant', constant_values=fill_value) if pad_spec else img
-        padded = padded.assign_coords({'y': target_y_coords, 'x': target_x_coords})
-
-        if isinstance(padded.data, da.Array):
-            chunk_spec = {}
-            for dim in padded.dims:
-                if dim == 'c':
-                    chunk_spec[dim] = padded.sizes[dim]
-                elif dim in {'y', 'x'}:
-                    chunk_spec[dim] = min(max_chunk, padded.sizes[dim])
-            padded = padded.chunk(chunk_spec)
-
-        sdata.images[key] = padded
-
-
-
 
 def ensure_cell_boundaries_labels(
     sdata,
@@ -145,8 +92,6 @@ files.sort()
 for f in files[::-1]:
     print(f)
     dat = sd.read_zarr(os.path.join(in_folder,f))
-    pad_images_to_common_extent(dat)
-
     img_key = list(dat.images.keys())[0]
 
     name_to_label = ensure_cell_boundaries_labels(dat, shapes_key='cell_boundaries', image_key=img_key, force=True,label_key = 'cell_boundaries_label')
