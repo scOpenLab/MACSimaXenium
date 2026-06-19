@@ -51,19 +51,22 @@ class XeniumMacsimaRegistration:
         scale_factor : int, default=3
             Downscaling factor for image processing during registration
         """
-        self.scale_factor = scale_factor
-        self.xenium_data = None
-        self.adata = None
-        self.transform_factor = None
-        self.bbox = None
-        self.xenium_table = None
-        self.xenium_adata = None
-        self.xenium_cell_boundaries = None
-        self.xenium_nucleus_boundaries = None
-        self.dx = None
-        self.cropped_mf = None
+        self.scale_factor = scale_factor     # scale factor for registration
+        self.transform_factor = None         # Xenium um per pixel
+        self.xenium_data = None              # Xenium SpatialData object
+        self.dna_mf_roi = None               # Cropped DAPI Xenium image downscaled
+        self.cropped_mf = None               # Cropped morphology focus image full resolution
+        self.adata = None                    # AnnData Object with the MACSima-Xenium ROI mappings 
+        self.bbox = None                     # Bounding box (pixel registration scale)
+        self.bbox_unscaled = None            # Bounding box (pixel full Xenium scale)
+        self.dx = None                       # Filtered xXenium cell table
+        self.cropped_mf = None               # Cropped Xenium morphology focus full scale
+        self.macsima_image = None            # MACSima DAPI image full resolution
+        self.dna_macsima = None              # MACSima DAPI image downscaled for registration
+        self.dna_macsima_registered = None   # MACSima DAPI image downscaled and registered
+        self.aligned_data = sd.SpatialData() # Aligned SpatialData object
         
-    def load_annotated_data(self, h5ad_path, slide_name, position=None):
+    def load_annotated_data(self, h5ad_path, slide_name):
         """
         Load and filter annotated single-cell data.
         
@@ -73,8 +76,6 @@ class XeniumMacsimaRegistration:
             Path to the annotated H5AD file
         slide_name : str
             Name of the slide to filter for
-        position : int, optional
-            Specific position to highlight (for ROI selection)
             
         Returns:
         --------
@@ -82,23 +83,15 @@ class XeniumMacsimaRegistration:
             Filtered annotated data
         """
         print(f"Loading annotated data from {h5ad_path}")
-        dat = sc.read_h5ad(h5ad_path)
-        print(f"Total cells in dataset: {dat.n_obs}")
-        dat = dat[dat.obs['slide'] == slide_name]
-        print(f"Total cells in slide {slide_name}: {dat.n_obs}")
-        dat = dat[dat.obs['is_in_core']]
-        print(f"Total core cells in slide after out of core removal {slide_name}: {dat.n_obs}")
-        if position is not None:
-            dat.obs['position'] = dat.obs['position'].astype(str)
-            dat.obs['highlight'] = dat.obs['position'].astype(str)
-            dat.obs.loc[dat.obs['position'] == str(position), 'highlight'] = 'Yes'
-            dat = dat[dat.obs['highlight'] == 'Yes']
-            print(f"Total cells in position {position}: {dat.n_obs}")
-            
-        self.adata = dat
-        return dat
+        self.adata = sc.read_h5ad(h5ad_path)
+        print(f"Total cells in dataset: {self.adata.n_obs}")
+        self.adata = self.adata[self.adata.obs['slide'] == slide_name]
+        print(f"Total cells in slide {slide_name}: {self.adata.n_obs}")
+        self.adata = self.adata[self.adata.obs['is_in_core']]
+        print(f"Total core cells in slide after out of core removal {slide_name}: {self.adata.n_obs}")
+        return self.adata
     
-    def load_xenium_data(self, xenium_folder, n_jobs=4):
+    def load_xenium_data(self, xenium_folder, n_jobs=1):
         """
         Load Xenium spatial transcriptomics data.
         
@@ -114,7 +107,7 @@ class XeniumMacsimaRegistration:
             'cells.parquet': File containing cell metadata.
             'morphology_mip.ome.tif': File containing morphology mip.
             'morphology_focus.ome.tif': File containing morphology focus 
-        n_jobs: int (default: 8)
+        n_jobs: int (default: 1)
             Number of jobs to use for parallel processing
 
         Returns:
@@ -123,13 +116,13 @@ class XeniumMacsimaRegistration:
             Loaded Xenium spatial data
         """
         print(f"Loading Xenium data from {xenium_folder}")
-        xenium_data = spatialdata_io.xenium(
+        self.xenium_data = spatialdata_io.xenium(
             xenium_folder,
             cells_boundaries=True,
             nucleus_boundaries=True,
             cells_as_circles=False,
             cells_labels=True,
-            nucleus_labels=False,
+            nucleus_labels=True,
             transcripts=True,
             morphology_mip=False,
             morphology_focus=True,
@@ -139,12 +132,11 @@ class XeniumMacsimaRegistration:
         )
         
         # Get transformation parameters
-        trns = get_transformation(xenium_data["cell_boundaries"])
+        trns = get_transformation(self.xenium_data["cell_boundaries"])
         self.transform_factor = trns.scale[0]
         assert trns.scale[0] == trns.scale[1], "Non-uniform scaling detected"
         
-        self.xenium_data = xenium_data
-        return xenium_data
+        return self.xenium_data
     
     def align_data_tables(self, position_adata):
         """
@@ -173,11 +165,6 @@ class XeniumMacsimaRegistration:
         self.dx = self.dx[self.adata.obs['obs_name_orig'].astype(str)]
         self.dx = self.dx[self.dx.obs.position == position_adata]
         
-        # Filter boundaries
-        cell_names = self.dx.obs.index.to_list()
-        self.xenium_cell_boundaries = self.xenium_data['cell_boundaries'].loc[cell_names]
-        self.xenium_nucleus_boundaries = self.xenium_data['nucleus_boundaries'].loc[cell_names]
-        
         return self.dx
     
     def load_macsima_image(self, macsima_path):
@@ -196,68 +183,62 @@ class XeniumMacsimaRegistration:
         """
         print(f"Loading MACSima image from {macsima_path}")
 
-        macsima_img = tifffile.imread(macsima_path, aszarr=True)
-        macsima_img = zarr.open(macsima_img, mode="r")
-        macsima_img = dask.array.from_zarr(macsima_img["0"])
-
-        return macsima_img
+        self.macsima_image = tifffile.imread(macsima_path, aszarr=True)
+        self.macsima_image = zarr.open(self.macsima_image, mode="r")
+        self.macsima_image = dask.array.from_zarr(self.macsima_image["0"])
+        return self.macsima_image
     
-    def calculate_roi_bbox(self, dx):
+    def calculate_roi_bbox(self):
         """
         Calculate bounding box for the region of interest.
         
         Parameters:
         -----------
-        dx : scanpy.AnnData
-            Xenium data table with spatial coordinates
             
         Returns:
         --------
         tuple
             (x0, y0, x1, y1) bounding box coordinates
         """
-        dx.obsm['spatial_transformed'] = (
-            dx.obsm['spatial'] * self.transform_factor / self.scale_factor
+        self.dx.obsm['spatial_transformed'] = (
+            self.dx.obsm['spatial'] * self.transform_factor / self.scale_factor
         )
         
-        x0, y0 = dx.obsm['spatial_transformed'].min(axis=0)
-        x1, y1 = dx.obsm['spatial_transformed'].max(axis=0)
-        bbox = (x0, y0, x1, y1)
-        
-        self.bbox = bbox
-        return bbox
+        x0, y0 = self.dx.obsm['spatial_transformed'].min(axis=0).astype(int)
+        x1, y1 = self.dx.obsm['spatial_transformed'].max(axis=0).astype(int)
+        self.bbox = (x0, y0, x1, y1)
+
+        x0, y0 = (self.dx.obsm['spatial'].min(axis=0) * self.transform_factor).astype(int)
+        x1, y1 = (self.dx.obsm['spatial'].max(axis=0) * self.transform_factor).astype(int)
+        self.bbox_unscaled = (x0, y0, x1, y1)
+        return self.bbox
     
-    def extract_roi_from_morphology(self, mf_img, bbox):
+
+    def extract_roi_from_morphology(self):
         """
         Extract ROI from morphology focus image based on bounding box.
         
         Parameters:
         -----------
-        mf_img : dask.array
-            Full morphology focus image
-        bbox : tuple
-            (x0, y0, x1, y1) bounding box coordinates
             
         Returns:
         --------
         numpy.ndarray
             Cropped and preprocessed morphology focus ROI
         """
-        dna_mf = preprocess_reg(mf_img[0, ...], self.scale_factor)
-        dna_mf_roi = dna_mf[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
+        dna_mf = preprocess_reg(
+                                self.xenium_data["morphology_focus"]["scale0"].image.data[0, ...],
+                                self.scale_factor)
+        self.dna_mf_roi = dna_mf[self.bbox[1]:self.bbox[3], self.bbox[0]:self.bbox[2]]
+        self.cropped_mf = self.xenium_data["morphology_focus"]["scale0"].image.data[:,
+            self.bbox_unscaled[1]:self.bbox_unscaled[3],
+            self.bbox_unscaled[0]:self.bbox_unscaled[2]]
         
-        return dna_mf_roi
+        return self.dna_mf_roi
     
-    def register_images(self, macsima_img, mf_roi):
+    def register_images(self):
         """
         Register MACSima image to morphology focus ROI.
-        
-        Parameters:
-        -----------
-        macsima_img : dask.array
-            Full MACSima image
-        mf_roi : numpy.ndarray
-            Morphology focus ROI for registration target
             
         Returns:
         --------
@@ -265,135 +246,99 @@ class XeniumMacsimaRegistration:
             (affine_matrix_2d, affine_matrix_full, aligned_macsima)
         """
         print("Preprocessing MACSima image for registration")
-        dna_macsima = preprocess_reg(macsima_img, self.scale_factor)
+        self.dna_macsima = preprocess_reg(self.macsima_image, self.scale_factor)
         
         print("Computing alignment matrix")
-        crop_affine_cyx = get_align_matrix(dna_macsima, mf_roi, 1)
-        affine_2d_corrected = crop_affine_cyx[1:3, 1:4]  # Extract Y,X part
+        crop_affine_cyx = get_align_matrix(self.dna_macsima, self.dna_mf_roi, 1)
+        self.affine_2d_corrected = crop_affine_cyx[1:3, 1:4]  # Extract Y,X part
         
         # Scale affine matrix for full-resolution image
-        affine_2d_full = affine_2d_corrected.copy()
-        affine_2d_full[0, 2] *= self.scale_factor  # Scale Y translation
-        affine_2d_full[1, 2] *= self.scale_factor  # Scale X translation
+        self.affine_2d_full = self.affine_2d_corrected.copy()
+        self.affine_2d_full[0, 2] *= self.scale_factor  # Scale Y translation
+        self.affine_2d_full[1, 2] *= self.scale_factor  # Scale X translation
         
         print("Applying transformation to full MACSima image")
-        aligned_macsima = dask_image.ndinterp.affine_transform(
-            macsima_img, affine_2d_full, output_shape=macsima_img.shape,
+        self.aligned_macsima = dask_image.ndinterp.affine_transform(
+            self.macsima_image, self.affine_2d_full, output_shape=self.cropped_mf.shape[1:],
             output_chunks=(1024, 1024) 
         )
 
-        return affine_2d_corrected, affine_2d_full, aligned_macsima
+        print("Applying transformation to downscaled MACSima image")
+        self.dna_macsima_registered = dask_image.ndinterp.affine_transform(
+            self.dna_macsima, self.affine_2d_corrected, output_shape=self.dna_mf_roi.shape,
+            output_chunks=(256, 256) 
+        )
+
+        return self.affine_2d_corrected, self.affine_2d_full, self.aligned_macsima
     
-    def transform_boundaries(self):
+    def _transform_boundaries(self):
         """
         Transform cell and nucleus boundaries to aligned coordinate system.
-
-        This mirrors the legacy notebook behavior by creating both ROI-scale and
-        full-resolution versions of the geometries. The return value controls
-        which version is provided, while both are stored on ``self.xenium_data``
-        for downstream use.
         """
         if self.bbox is None:
             raise ValueError("Bounding box not set. Run calculate_roi_bbox() first.")
 
-        # Prepare keys matching the legacy workflow
-        roi_cell_key = 'cell_boundaries_transformed_full'
-        roi_nucleus_key = 'nucleus_boundaries_transformed_full'
-
-        self.xenium_data[roi_cell_key] = self.xenium_data['cell_boundaries'].copy()
-        self.xenium_data[roi_nucleus_key] = self.xenium_data['nucleus_boundaries'].copy()
-
-        full_scale = self.transform_factor
-
-        for name in self.xenium_data['cell_boundaries'].index:
-            if name not in self.adata.obs_names:
-                continue
-            poly = self.xenium_data['cell_boundaries'].loc[name, 'geometry']
-            if poly is None:
-                continue
-
-            roi_poly = affinity.scale(poly, xfact=full_scale, yfact=full_scale, origin=(0, 0))
-
-            full_poly = affinity.translate(roi_poly, xoff=-self.bbox[0]*self.scale_factor, yoff=-self.bbox[1]*self.scale_factor)
-            self.xenium_data[roi_cell_key].loc[name, 'geometry'] = full_poly
+        cell_names = self.dx.obs.index
+        self.aligned_data["cell_boundaries"] = self.xenium_data['cell_boundaries'].loc[cell_names]
+        self.aligned_data["nucleus_boundaries"] = self.xenium_data['nucleus_boundaries'].loc[cell_names] 
+        
+        for name in self.aligned_data["cell_boundaries"].index:
+            poly = self.aligned_data["cell_boundaries"].loc[name, 'geometry']
+            roi_poly = affinity.scale(poly, xfact=self.transform_factor, yfact=self.transform_factor, origin=(0, 0))
+            full_poly = affinity.translate(roi_poly,
+                                           xoff=-self.bbox_unscaled[0],
+                                           yoff=-self.bbox_unscaled[1])
+            self.aligned_data["cell_boundaries"].loc[name, 'geometry'] = full_poly
 
 
-        for name in self.xenium_data['nucleus_boundaries'].index:
-            if name not in self.adata.obs_names:
-                continue
-            poly = self.xenium_data['nucleus_boundaries'].loc[name, 'geometry']
-            if poly is None:
-                continue
+        for name in self.aligned_data['nucleus_boundaries'].index:
+            poly = self.aligned_data['nucleus_boundaries'].loc[name, 'geometry']
+            roi_poly = affinity.scale(poly, xfact=self.transform_factor, yfact=self.transform_factor, origin=(0, 0))
+            full_poly = affinity.translate(roi_poly,
+                                           xoff=-self.bbox_unscaled[0],
+                                           yoff=-self.bbox_unscaled[1])
+            self.aligned_data['nucleus_boundaries'].loc[name, 'geometry'] = full_poly
 
-            roi_poly = affinity.scale(poly, xfact=full_scale, yfact=full_scale, origin=(0, 0))
+        # Reset transformations to Identity
+        set_transformation(self.aligned_data['cell_boundaries'], Identity(), "global")
+        set_transformation(self.aligned_data['nucleus_boundaries'], Identity(), "global")
 
-            full_poly = affinity.translate(roi_poly, xoff=-self.bbox[0]*self.scale_factor, yoff=-self.bbox[1]*self.scale_factor)
-            self.xenium_data[roi_nucleus_key].loc[name, 'geometry'] = full_poly
-
-        return self.xenium_data[roi_cell_key], self.xenium_data[roi_nucleus_key]
-    
-    def create_aligned_spatialdata(self, aligned_macsima, full_mf):
+    def create_aligned_spatialdata(self):
         """
         Create a new SpatialData object with aligned images and boundaries.
         
-        Parameters:
-        -----------
-        aligned_macsima : dask.array
-            Aligned MACSima image
-        full_mf : numpy.ndarray, optional
-            Full morphology focus image (cropped to ROI)
-            
         Returns:
         --------
         spatialdata.SpatialData
             New aligned spatial data object
         """
-        print("Creating aligned SpatialData object")
-        aligned_data = sd.SpatialData()
-        
-        # Add transformed boundaries (full-resolution variant)
-        cell_key = 'cell_boundaries_transformed_full'
-        nucleus_key = 'nucleus_boundaries_transformed_full'
-        if cell_key not in self.xenium_data or nucleus_key not in self.xenium_data:
-            # Ensure transformed boundaries are available; compute on the fly if needed
-            self.transform_boundaries()
-
-        aligned_data['cell_boundaries'] = self.xenium_data[cell_key].copy()
-        aligned_data['nucleus_boundaries'] = self.xenium_data[nucleus_key].copy()
-        
-        # Reset transformations to Identity
-        set_transformation(aligned_data['cell_boundaries'], Identity(), "global")
-        set_transformation(aligned_data['nucleus_boundaries'], Identity(), "global")
+        # Filter cell/nucleus boundaries and scale + translate them
+        self._transform_boundaries()
         
         # Add aligned MACSima image
         macsima_model = Image2DModel.parse(
-            dask.array.expand_dims(aligned_macsima, 0),
+            dask.array.expand_dims(self.aligned_macsima, 0),
             c_coords=[0],
             dims=('c', 'y', 'x'),
         )
-        aligned_data['macsima_img'] = macsima_model
+        self.aligned_data['macsima_DAPI'] = macsima_model
         
-        self.cropped_mf = full_mf
         full_mf_model = Image2DModel.parse(
-            full_mf,
+            self.cropped_mf,
             dims=('c', 'y', 'x'),
         )
-        aligned_data['morphology_focus_full'] = full_mf_model
+        self.aligned_data['morphology_focus'] = full_mf_model
         
-        return aligned_data
+        return self.aligned_data
     
-    def add_additional_macsima_images(self, aligned_data, macsima_folder, affine_2d_full=None):
+    def add_additional_macsima_images(self, macsima_folder):
         """
         Add additional MACSima channel images to the aligned data.
         
         Parameters:
         -----------
-        aligned_data : spatialdata.SpatialData
-            Aligned spatial data object to add images to
         macsima_folder : str
             Path to folder containing MACSima images
-        affine_2d_full : numpy.ndarray
-            Full-resolution affine transformation matrix
         """
         try:
             macsima_images = [f for f in os.listdir(macsima_folder) if f.endswith('.tif')]
@@ -401,12 +346,10 @@ class XeniumMacsimaRegistration:
             print(f"Warning: Could not access MACSima folder {macsima_folder}: {e}")
             return
         
-        # Filter out images we don't want to include
+        # Filter out images we don't want to include (DAPI + None + Background)
         filtered_images = []
-        for img_name in macsima_images:
-            if 'DAPI' in img_name:
-                continue  # Skip all DAPI images as we already add the first one
-            if 'None' in img_name:
+        for img_name in macsima_images: 
+            if 'DAPI' in img_name or 'None' in img_name and "_S_" not in img_name:
                 continue
             filtered_images.append(img_name)
         
@@ -417,26 +360,18 @@ class XeniumMacsimaRegistration:
             img_key = f"macsima_{img_name.replace('.tif', '')}"
             
             print(f"Adding image {i}/{len(filtered_images)}: {img_key}")
-            try:
-                self._add_transformed_image(aligned_data, img_path, img_key, affine_2d_full)
-            except Exception as e:
-                print(f"Warning: Failed to add image {img_name}: {e}")
-                continue
+            self._add_transformed_image(img_path, img_key)
     
-    def _add_transformed_image(self, data, image_path, name, affine_2d_full):
+    def _add_transformed_image(self, image_path, name):
         """
         Helper function to add a transformed image to SpatialData object.
         
         Parameters:
         -----------
-        data : spatialdata.SpatialData
-            Target spatial data object
         image_path : str
             Path to the image file
         name : str
             Name for the image in the spatial data object
-        affine_2d_full : numpy.ndarray
-            Affine transformation matrix
         """
         other_img = tifffile.imread(image_path, aszarr=True)
         other_img = zarr.open(other_img, mode="r")
@@ -444,7 +379,10 @@ class XeniumMacsimaRegistration:
 
         # Transform the image
         other_img_transformed = dask_image.ndinterp.affine_transform(
-            other_img, affine_2d_full, output_shape=self.cropped_mf.shape[1:], output_chunks=(1024, 1024)
+            other_img,
+            self.affine_2d_full,
+            output_shape=self.cropped_mf.shape[1:],
+            output_chunks=(1024, 1024)
         )
         
         # Create model
@@ -454,34 +392,28 @@ class XeniumMacsimaRegistration:
             c_coords=[0],
             dims=('c', 'y', 'x'),
         )
-        data[name] = other_image_model
+        self.aligned_data[name] = other_image_model
     
-    def add_table_and_transcripts(self, aligned_data, dx):
+    def add_table_and_transcripts(self):
         """
         Add cell table and filtered transcripts to aligned data.
-        
-        Parameters:
-        -----------
-        aligned_data : spatialdata.SpatialData
-            Aligned spatial data object
-        dx : scanpy.AnnData
-            Xenium data table with spatial coordinates
         """
         # Prepare table
-        dx_c = dx.copy()
         # Clear any existing spatial data metadata to avoid conflicts
-        if hasattr(dx_c, 'uns'):
-            if 'spatialdata_attrs' in dx_c.uns:
-                del dx_c.uns['spatialdata_attrs']
+        if hasattr(self.dx, 'uns'):
+            if 'spatialdata_attrs' in self.dx.uns:
+                del self.dx.uns['spatialdata_attrs']
         
-        dx_c.obs["region"] = "cell_boundaries"
-        dx_c.obs["region"] = dx_c.obs["region"].astype("category")
-        dx_c.obs["instance_id"] = dx_c.obs_names
+        self.dx.obs["region"] = "cell_boundaries"
+        self.dx.obs["region"] = self.dx.obs["region"].astype("category")
+        self.dx.obs["instance_id"] = self.dx.obs_names
         
         table = TableModel.parse(
-            dx_c, region="cell_boundaries", region_key="region", instance_key="instance_id", overwrite_metadata=True
+            self.dx, region="cell_boundaries",
+            region_key="region",
+            instance_key="instance_id", overwrite_metadata=True
         )
-        aligned_data.tables["adata"] = table
+        self.aligned_data["adata"] = table
         
         # Add filtered transcripts
         min_x = self.bbox[0] * self.scale_factor / self.transform_factor
@@ -497,30 +429,20 @@ class XeniumMacsimaRegistration:
             (self.xenium_data['transcripts']['y'] <= max_y)
         ]
 
-        #move transcripts to the new coordinate
-
+        #move transcripts to the new coordinate system
         filtered_transcripts['x'] = filtered_transcripts['x'] - min_x
         filtered_transcripts['y'] = filtered_transcripts['y'] - min_y
 
         filtered_transcripts['x'] = filtered_transcripts['x'] * self.transform_factor
         filtered_transcripts['y'] = filtered_transcripts['y'] * self.transform_factor
 
-        aligned_data['transcripts'] = filtered_transcripts
-        set_transformation(aligned_data['transcripts'], Identity(), "global")
+        self.aligned_data['transcripts'] = filtered_transcripts
+        set_transformation(self.aligned_data['transcripts'], Identity(), "global")
     
-    def create_registration_summary_plot(self, mf_roi, aligned_macsima_roi, dx):
+    def create_registration_summary_plot(self):
         """
         Create a comprehensive summary plot showing registration results.
         
-        Parameters:
-        -----------
-        mf_roi : numpy.ndarray
-            Morphology focus ROI
-        aligned_macsima_roi : numpy.ndarray
-            Aligned MACSima ROI  
-        dx : scanpy.AnnData
-            Xenium data table with spatial coordinates
-            
         Returns:
         --------
         matplotlib.figure.Figure
@@ -530,10 +452,10 @@ class XeniumMacsimaRegistration:
         fig.suptitle('Xenium-MACSima Registration Summary', fontsize=16, fontweight='bold')
         
         # Top left: Original morphology focus with cell locations
-        axes[0, 0].imshow(mf_roi, cmap='gray')
+        axes[0, 0].imshow(self.dna_mf_roi, cmap='gray')
         axes[0, 0].scatter(
-            dx.obsm['spatial_transformed'][:, 0] - self.bbox[0],
-            dx.obsm['spatial_transformed'][:, 1] - self.bbox[1],
+            self.dx.obsm['spatial_transformed'][:, 0] - self.bbox[0],
+            self.dx.obsm['spatial_transformed'][:, 1] - self.bbox[1],
             color='red', s=1, alpha=0.1, label='Cell centers'
         )
         axes[0, 0].set_title('Target: Xenium Morphology Focus')
@@ -541,9 +463,8 @@ class XeniumMacsimaRegistration:
         axes[0, 0].axis('off')
         
         # Top right: Original MACSima 
-        if aligned_macsima_roi.size > 0:
-            dna_macsima = preprocess_reg(aligned_macsima_roi, 1)
-            axes[0, 1].imshow(dna_macsima, cmap='gray')
+        if self.dna_macsima_registered.size > 0:
+            axes[0, 1].imshow(self.dna_macsima, cmap='gray')
             axes[0, 1].set_title('Source: MACSima DAPI')
         else:
             axes[0, 1].text(0.5, 0.5, 'MACSima ROI\nEmpty or Invalid', 
@@ -552,11 +473,11 @@ class XeniumMacsimaRegistration:
         axes[0, 1].axis('off')
         
         # Bottom left: Aligned MACSima with cell boundaries
-        if aligned_macsima_roi.size > 0:
-            axes[1, 0].imshow(dna_macsima, cmap='gray')
+        if self.dna_macsima_registered.size > 0:
+            axes[1, 0].imshow(self.dna_macsima_registered, cmap='gray')
             axes[1, 0].scatter(
-                dx.obsm['spatial_transformed'][:, 0] - self.bbox[0],
-                dx.obsm['spatial_transformed'][:, 1] - self.bbox[1],
+                self.dx.obsm['spatial_transformed'][:, 0] - self.bbox[0],
+                self.dx.obsm['spatial_transformed'][:, 1] - self.bbox[1],
                 c='cyan', s=1, alpha=0.1, label='Cell centers'
             )
         else:
@@ -568,30 +489,18 @@ class XeniumMacsimaRegistration:
         axes[1, 0].axis('off')
         
         # Bottom right: Overlay comparison
-        if aligned_macsima_roi.size > 0:
-            # Ensure both images are the same size for overlay
-            min_h = min(mf_roi.shape[0], dna_macsima.shape[0])
-            min_w = min(mf_roi.shape[1], dna_macsima.shape[1])
-            
-            # Crop both images to the same size
-            mf_crop = mf_roi[:min_h, :min_w]
-            macsima_crop = dna_macsima[:min_h, :min_w]
-            
+        if self.dna_macsima_registered.size > 0:
             # Create RGB overlay
-            overlay = np.zeros((min_h, min_w, 3))
+            overlay = np.zeros((*self.dna_mf_roi.shape, 3), dtype="uint8")
             
-            # Normalize images
-            mf_norm = (mf_crop - mf_crop.min()) / (mf_crop.max() - mf_crop.min())
-            macsima_norm = (macsima_crop - macsima_crop.min()) / (macsima_crop.max() - macsima_crop.min())
-            
-            overlay[:, :, 0] = macsima_norm  # MACSima in red
-            overlay[:, :, 1] = mf_norm       # Morphology focus in green
+            overlay[:, :, 0] = self.dna_macsima_registered.astype("uint8") # MACSima in red
+            overlay[:, :, 1] = self.dna_mf_roi.astype("uint8")             # Morphology focus in green
             
             axes[1, 1].imshow(overlay)
             axes[1, 1].set_title('Overlay: Registration Quality\n(Red=MACSima, Green=Morphology)')
         else:
             # Show just the morphology focus
-            axes[1, 1].imshow(mf_roi, cmap='gray')
+            axes[1, 1].imshow(self.dna_mf_roi, cmap='gray')
             axes[1, 1].set_title('Morphology Focus Only\n(MACSima ROI Empty)')
         axes[1, 1].axis('off')
         
