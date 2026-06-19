@@ -119,33 +119,33 @@ for position_adata, roi_macsima in position_roi_map.items():
     print(f"DAPI Files in MACSIMA folder for ROI {roi_macsima}: {files_mf} using the first one.")
     assert len(files_mf) == 1, f"Expected exactly one DAPI file in MACSIMA folder for ROI {roi_macsima}, but found: {files_mf}"
     dapi_file = files_mf[0]
-    macsima_image = os.path.join(macsima_roi_folder, dapi_file)
+    macsima_image_path = os.path.join(macsima_roi_folder, dapi_file)
 
     # Align data tables
     print("Aligning annotated data with Xenium table...")
     dx = registration.align_data_tables(position_adata)
-    print(f"Filtered to position {position_adata}: {dx.obs.value_counts()}")
+    print(f"Filtered to position {position_adata}: {dx.obs.shape[0]}")
     print(f"Xenium table: {dx.shape}")
     print(f"Spatial coordinates set: {dx.obsm['spatial'].shape}")
 
     # Load MACSIMA image
     print("Loading MACSIMA image...")
-    macsima_img = registration.load_macsima_image(macsima_image)
+    macsima_img = registration.load_macsima_image(macsima_image_path)
     print(f"MACSIMA image shape: {macsima_img.shape}")
 
     # Calculate ROI bounding box
     print("Calculating ROI bounding box...")
-    bbox = registration.calculate_roi_bbox(dx)
+    bbox = registration.calculate_roi_bbox()
     print(f"ROI bounding box: x=({bbox[0]:.1f}, {bbox[2]:.1f}), y=({bbox[1]:.1f}, {bbox[3]:.1f})")
 
     # Extract ROI from morphology focus
     print("Extracting ROI from morphology focus...")
-    mf_roi = registration.extract_roi_from_morphology(mf_img, bbox) # cyx -> yx
+    mf_roi = registration.extract_roi_from_morphology() # cyx -> yx
     print(f"Morphology focus ROI shape: {mf_roi.shape}")
 
     # Perform image registration
     print("Registering MACSIMA image to morphology focus...")
-    affine_2d, affine_2d_full, aligned_macsima = registration.register_images(macsima_img, mf_roi)
+    affine_2d, affine_2d_full, aligned_macsima = registration.register_images()
 
     print("Registration completed successfully")
     print(f"Aligned MACSIMA shape: {aligned_macsima.shape}")
@@ -153,54 +153,39 @@ for position_adata, roi_macsima in position_roi_map.items():
     # Create aligned spatial data object (without additional images first)
     print("Creating aligned SpatialData object...")
 
-    # Prepare full morphology focus image for the ROI
-    full_mf_roi = mf_img[:,
-        int(bbox[1]*scale_factor):int(bbox[3]*scale_factor), 
-        int(bbox[0]*scale_factor):int(bbox[2]*scale_factor)
-    ] #cyx
-
     # Create the basic aligned data object
-    aligned_data = registration.create_aligned_spatialdata(
-        aligned_macsima=aligned_macsima,
-        full_mf=full_mf_roi # cyx
-    )
+    aligned_data = registration.create_aligned_spatialdata()
 
     print(f"Created basic aligned data with images: {list(aligned_data.images.keys())}")
     print(f"Created basic aligned data with shapes: {list(aligned_data.shapes.keys())}")
 
     # Add cell table and transcripts first (lighter operation)
     print("Adding cell table and transcripts...")
-    registration.add_table_and_transcripts(aligned_data, dx)
+    registration.add_table_and_transcripts()
 
     print(f"Added table with {aligned_data.tables['adata'].n_obs} cells")
     print(f"Added {len(aligned_data['transcripts'])} transcripts")
 
     print("BASIC ALIGNED DATA CREATED SUCCESSFULLY")
 
-    print("Adding additional MACSIMA channel images...")
-    registration.add_additional_macsima_images(
-            aligned_data, 
-            macsima_roi_folder, 
-            affine_2d_full, 
-        )
+    print("Adding additional MACSima channel images...")
+    registration.add_additional_macsima_images(macsima_roi_folder)
     print(f"Successfully added additional images. Total images: {len(aligned_data.images)}")
     print(f"Final image count: {len(aligned_data.images)}")
     print(f"Available images: {list(aligned_data.images.keys())}")
 
 
-    # Get the processed MACSIMA from the aligned data
-    print(f"Full aligned MACSIMA shape: {aligned_macsima.shape}")
+    # Get the processed MACSima from the aligned data
+    print(f"Full aligned MACSima shape: {aligned_macsima.shape}")
     print(f"Morphology ROI shape: {mf_roi.shape}")
 
     # Create registration summary plot
-    # Process MACSIMA at the same scale as used for registration
+    # Process MACSima at the same scale as used for registration
     print("Generating registration summary visualization...")
-    dna_macsima_processed = xenium_macsima_core_registration.preprocess_reg(aligned_macsima, scale_factor)
-    summary_figure = registration.create_registration_summary_plot(mf_roi,
-                                                                   dna_macsima_processed,
-                                                                   aligned_data["adata"])
+    summary_figure = registration.create_registration_summary_plot()
     os.mkdir(output_path)
-    summary_figure.savefig(os.path.join(output_path, f'POS_{position_adata}_registration_summary.png'), dpi=300)
+    summary_figure.savefig(os.path.join(output_path,
+        f'POS_{position_adata}_registration_summary.png'), dpi=300)
     print("Registration summary plot generated successfully!")
 
     # Save the aligned spatial data
