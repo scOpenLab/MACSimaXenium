@@ -148,6 +148,7 @@ for position_adata, roi_macsima in position_roi_map.items():
     affine_2d, affine_2d_full, aligned_macsima = registration.register_images()
 
     print("Registration completed successfully")
+    print(f"Morphology ROI shape: {mf_roi.shape}")
     print(f"Aligned MACSIMA shape: {aligned_macsima.shape}")
 
     # Create aligned spatial data object (without additional images first)
@@ -155,9 +156,10 @@ for position_adata, roi_macsima in position_roi_map.items():
 
     # Create the basic aligned data object
     aligned_data = registration.create_aligned_spatialdata()
-
+    print("BASIC ALIGNED DATA CREATED SUCCESSFULLY")
     print(f"Created basic aligned data with images: {list(aligned_data.images.keys())}")
     print(f"Created basic aligned data with shapes: {list(aligned_data.shapes.keys())}")
+    print(f"Created basic aligned data with labeles: {list(aligned_data.labels.keys())}")
 
     # Add cell table and transcripts first (lighter operation)
     print("Adding cell table and transcripts...")
@@ -166,21 +168,15 @@ for position_adata, roi_macsima in position_roi_map.items():
     print(f"Added table with {aligned_data.tables['adata'].n_obs} cells")
     print(f"Added {len(aligned_data['transcripts'])} transcripts")
 
-    print("BASIC ALIGNED DATA CREATED SUCCESSFULLY")
-
     print("Adding additional MACSima channel images...")
     registration.add_additional_macsima_images(macsima_roi_folder)
     print(f"Successfully added additional images. Total images: {len(aligned_data.images)}")
-    print(f"Final image count: {len(aligned_data.images)}")
-    print(f"Available images: {list(aligned_data.images.keys())}")
 
-
-    # Get the processed MACSima from the aligned data
-    print(f"Full aligned MACSima shape: {aligned_macsima.shape}")
-    print(f"Morphology ROI shape: {mf_roi.shape}")
+    print("Quantifying proteins")
+    #registration.quantify_proteins()
+    print("Successfully quantified proteins")
 
     # Create registration summary plot
-    # Process MACSima at the same scale as used for registration
     print("Generating registration summary visualization...")
     summary_figure = registration.create_registration_summary_plot()
     os.mkdir(output_path)

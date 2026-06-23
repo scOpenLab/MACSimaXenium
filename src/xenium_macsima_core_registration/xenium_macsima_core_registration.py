@@ -25,7 +25,7 @@ import cv2 as cv
 import spatialdata as sd
 import matplotlib.pyplot as plt
 import scanpy as sc
-from spatialdata.models import Image2DModel, TableModel
+from spatialdata.models import Image2DModel, Labels2DModel, TableModel
 from spatialdata.transformations import get_transformation, set_transformation, Identity
 from shapely import affinity
 
@@ -64,6 +64,7 @@ class XeniumMacsimaRegistration:
         self.macsima_image = None            # MACSima DAPI image full resolution
         self.dna_macsima = None              # MACSima DAPI image downscaled for registration
         self.dna_macsima_registered = None   # MACSima DAPI image downscaled and registered
+        self.added_macsima_channels = []     # Names of the MACSima images added to the SpatialData object
         self.aligned_data = sd.SpatialData() # Aligned SpatialData object
         
     def load_annotated_data(self, h5ad_path, slide_name):
@@ -98,15 +99,7 @@ class XeniumMacsimaRegistration:
         Parameters:
         -----------
         xenium_folder : str
-            Path to the Xenium output folder with: 
-            'experiment.xenium': File containing specifications.
-            'nucleus_boundaries.parquet': Polygons of nucleus boundaries.
-            'cell_boundaries.parquet': Polygons of cell boundaries.
-            'transcripts.parquet': File containing transcripts.
-            'cell_feature_matrix.h5': File containing cell feature matrix.
-            'cells.parquet': File containing cell metadata.
-            'morphology_mip.ome.tif': File containing morphology mip.
-            'morphology_focus.ome.tif': File containing morphology focus 
+            Path to the Xenium output folder. 
         n_jobs: int (default: 1)
             Number of jobs to use for parallel processing
 
@@ -122,7 +115,7 @@ class XeniumMacsimaRegistration:
             nucleus_boundaries=True,
             cells_as_circles=False,
             cells_labels=True,
-            nucleus_labels=True,
+            nucleus_labels=False,
             transcripts=True,
             morphology_mip=False,
             morphology_focus=True,
@@ -131,7 +124,7 @@ class XeniumMacsimaRegistration:
             n_jobs=n_jobs,
         )
         
-        # Get transformation parameters
+        # Get um to pixel scale factor
         trns = get_transformation(self.xenium_data["cell_boundaries"])
         self.transform_factor = trns.scale[0]
         assert trns.scale[0] == trns.scale[1], "Non-uniform scaling detected"
@@ -323,6 +316,16 @@ class XeniumMacsimaRegistration:
         )
         self.aligned_data['macsima_DAPI'] = macsima_model
         
+        # Add cell labels
+        cell_label_model = Labels2DModel.parse(
+            self.xenium_data["cell_labels"]["scale0"].image.data[
+            self.bbox_unscaled[1]:self.bbox_unscaled[3],
+            self.bbox_unscaled[0]:self.bbox_unscaled[2]],
+            dims=('y', 'x'),
+        )
+        self.aligned_data['cell_labels'] = cell_label_model
+
+        # Add full_scale morphology focus
         full_mf_model = Image2DModel.parse(
             self.cropped_mf,
             dims=('c', 'y', 'x'),
@@ -358,6 +361,7 @@ class XeniumMacsimaRegistration:
         for i, img_name in enumerate(filtered_images, 1):
             img_path = os.path.join(macsima_folder, img_name)
             img_key = f"macsima_{img_name.replace('.tif', '')}"
+            self.added_macsima_channels.append(img_key)
             
             print(f"Adding image {i}/{len(filtered_images)}: {img_key}")
             self._add_transformed_image(img_path, img_key)
@@ -439,6 +443,10 @@ class XeniumMacsimaRegistration:
         self.aligned_data['transcripts'] = filtered_transcripts
         set_transformation(self.aligned_data['transcripts'], Identity(), "global")
     
+    def quantify_proteins(self):
+        pass
+
+
     def create_registration_summary_plot(self):
         """
         Create a comprehensive summary plot showing registration results.
