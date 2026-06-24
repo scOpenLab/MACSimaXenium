@@ -8,10 +8,10 @@ urls.Home-page = "https://github.com/scOpenLab/MACSimaXenium.git"
 requires-python = ">=3.11"
 readme = "README.md"
 dependencies = [
-	"spatialdata>=0.7.2",
-	"spatialdata-io>=0.6.0",
-	"ome-zarr==0.13.0",
-	"opencv-python-headless>=4.13.0.92", 
+	"harpy-analysis>=0.4.2",
+	"opencv-python-headless>=4.13.0.92",
+	"bioio-ome-tiff>=1.4.0",
+	"bioio>=3.3.0"
 ]
 
 [tool.setuptools]

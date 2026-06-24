@@ -15,7 +15,7 @@ import os
 
 
 import dask
-import dask_image
+import dask_image.ndinterp
 import skimage
 import tifffile
 import spatialdata_io
@@ -25,9 +25,8 @@ import cv2 as cv
 import spatialdata as sd
 import matplotlib.pyplot as plt
 import scanpy as sc
-from spatialdata.models import Image2DModel, Labels2DModel, TableModel
+from spatialdata.models import Image2DModel
 from spatialdata.transformations import get_transformation, set_transformation, Identity
-from shapely import affinity
 
 
 class XeniumMacsimaRegistration:
@@ -55,17 +54,15 @@ class XeniumMacsimaRegistration:
         self.transform_factor = None         # Xenium um per pixel
         self.xenium_data = None              # Xenium SpatialData object
         self.dna_mf_roi = None               # Cropped DAPI Xenium image downscaled
-        self.cropped_mf = None               # Cropped morphology focus image full resolution
         self.adata = None                    # AnnData Object with the MACSima-Xenium ROI mappings 
         self.bbox = None                     # Bounding box (pixel registration scale)
         self.bbox_unscaled = None            # Bounding box (pixel full Xenium scale)
         self.dx = None                       # Filtered xXenium cell table
-        self.cropped_mf = None               # Cropped Xenium morphology focus full scale
         self.macsima_image = None            # MACSima DAPI image full resolution
         self.dna_macsima = None              # MACSima DAPI image downscaled for registration
         self.dna_macsima_registered = None   # MACSima DAPI image downscaled and registered
         self.added_macsima_channels = []     # Names of the MACSima images added to the SpatialData object
-        self.aligned_data = sd.SpatialData() # Aligned SpatialData object
+        self.aligned_data = None             # Aligned SpatialData object
         
     def load_annotated_data(self, h5ad_path, slide_name):
         """
@@ -92,7 +89,7 @@ class XeniumMacsimaRegistration:
         print(f"Total core cells in slide after out of core removal {slide_name}: {self.adata.n_obs}")
         return self.adata
     
-    def load_xenium_data(self, xenium_folder, n_jobs=1):
+    def load_xenium_data(self, xenium_folder, n_jobs=4):
         """
         Load Xenium spatial transcriptomics data.
         
@@ -100,7 +97,7 @@ class XeniumMacsimaRegistration:
         -----------
         xenium_folder : str
             Path to the Xenium output folder. 
-        n_jobs: int (default: 1)
+        n_jobs: int (default: 4)
             Number of jobs to use for parallel processing
 
         Returns:
@@ -128,38 +125,77 @@ class XeniumMacsimaRegistration:
         trns = get_transformation(self.xenium_data["cell_boundaries"])
         self.transform_factor = trns.scale[0]
         assert trns.scale[0] == trns.scale[1], "Non-uniform scaling detected"
+
+        self.xenium_data['transcripts']['x'] = self.xenium_data['transcripts']['x'] * self.transform_factor
+        self.xenium_data['transcripts']['y'] = self.xenium_data['transcripts']['y'] * self.transform_factor
+        set_transformation(self.xenium_data['transcripts'], Identity(), "global")
         
         return self.xenium_data
-    
-    def align_data_tables(self, position_adata):
-        """
-        Align the annotated data with Xenium table and filter for highlighted cells.
 
-        Parameters:
-        -----------
-        position_adata : str Xenium TMA position to filter
-        
-        Returns:
-        --------
-        AnnData
-            filtered_xenium_table
-        """
-        if self.adata is None or self.xenium_data is None:
-            raise ValueError("Both annotated data and Xenium data must be loaded first")
-            
-        # Align observation tables
-        self.dx = self.xenium_data["table"].copy()
-        self.dx.obs = (
-            self.xenium_data["table"].obs.set_index('cell_id')
-            .join(self.adata.obs.set_index('obs_name_orig'), rsuffix='_scanpy')
+    def crop(self):
+        self.aligned_data = self.xenium_data.subset(["cell_boundaries",
+            "nucleus_boundaries",
+            "cell_labels",
+            "morphology_focus"
+         ])
+        self.aligned_data = sd.bounding_box_query(self.aligned_data, ("y", "x"),
+            min_coordinate = np.array((self.bbox_unscaled[1], self.bbox_unscaled[0])),
+            max_coordinate = np.array((self.bbox_unscaled[3], self.bbox_unscaled[2])),
+            target_coordinate_system = "global",
+            filter_table=True)
+
+        print("Transfroming to global coordinate system")
+        # cell_boundaries
+        self.aligned_data["cell_boundaries"] = self.aligned_data.transform_element_to_coordinate_system(
+                element_name= "cell_boundaries", target_coordinate_system="global")
+        sd.transformations.set_transformation(self.aligned_data["cell_boundaries"],
+                                              to_coordinate_system="global", transformation=Identity()) 
+        self.aligned_data["cell_boundaries"].geometry = self.aligned_data["cell_boundaries"].geometry.translate(
+                xoff = -self.bbox_unscaled[0],
+                yoff = -self.bbox_unscaled[1]
         )
+
+
+        # nucleus_boundaries
+        self.aligned_data["nucleus_boundaries"] = self.aligned_data.transform_element_to_coordinate_system(
+                element_name= "nucleus_boundaries", target_coordinate_system="global")
+        sd.transformations.set_transformation(self.aligned_data["nucleus_boundaries"],
+                                              to_coordinate_system="global", transformation=Identity()) 
+        self.aligned_data["nucleus_boundaries"].geometry = self.aligned_data["nucleus_boundaries"].geometry.translate(
+                xoff = -self.bbox_unscaled[0],
+                yoff = -self.bbox_unscaled[1]
+        )
+
+        # cell_labels
+        self.aligned_data["cell_labels"] = self.aligned_data.transform_element_to_coordinate_system(
+                element_name= "cell_labels", target_coordinate_system="global")
+        sd.transformations.set_transformation(self.aligned_data["cell_labels"],
+                                              to_coordinate_system="global", transformation=Identity()) 
         
-        # Set observation names and filter
-        self.dx = self.dx[self.adata.obs['obs_name_orig'].astype(str)]
-        self.dx = self.dx[self.dx.obs.position == position_adata]
+       # morphology_focus 
+        self.aligned_data["morphology_focus"] = self.aligned_data.transform_element_to_coordinate_system(
+                element_name= "morphology_focus", target_coordinate_system="global")
+        sd.transformations.set_transformation(self.aligned_data["morphology_focus"],
+                                              to_coordinate_system="global", transformation=Identity()) 
         
-        return self.dx
-    
+        print("Cropping and transforming transcripts")
+        # Copy and fix partitioning
+        self.aligned_data["transcripts"] = sd.models.PointsModel.parse(
+                self.xenium_data["transcripts"].repartition(npartitions=25), sort=True) 
+        # Filter Transcripts
+        self.aligned_data["transcripts"] = self.aligned_data["transcripts"][
+            (self.aligned_data['transcripts']['x'] >= self.bbox_unscaled[0]) &
+            (self.aligned_data['transcripts']['x'] <= self.bbox_unscaled[2]) &
+            (self.aligned_data['transcripts']['y'] >= self.bbox_unscaled[1]) &
+            (self.aligned_data['transcripts']['y'] <= self.bbox_unscaled[3])
+        ]
+        #move transcripts to the new coordinate system
+        self.aligned_data['transcripts']['x'] -= self.bbox_unscaled[0]
+        self.aligned_data['transcripts']['y'] -= self.bbox_unscaled[1]
+
+        return self.aligned_data
+
+
     def load_macsima_image(self, macsima_path):
         """
         Load MACSima image.
@@ -206,6 +242,34 @@ class XeniumMacsimaRegistration:
         self.bbox_unscaled = (x0, y0, x1, y1)
         return self.bbox
     
+    def align_data_tables(self, position_adata):
+        """
+        Align the annotated data with Xenium table and filter for highlighted cells.
+
+        Parameters:
+        -----------
+        position_adata : str Xenium TMA position to filter
+
+        Returns:
+        --------
+        AnnData
+            filtered_xenium_table
+        """
+        if self.adata is None or self.xenium_data is None:
+            raise ValueError("Both annotated data and Xenium data must be loaded first")
+
+        # Align observation tables
+        self.dx = self.xenium_data["table"].copy()
+        self.dx.obs = (
+            self.xenium_data["table"].obs.set_index('cell_id')
+            .join(self.adata.obs.set_index('obs_name_orig'), rsuffix='_scanpy')
+        )
+
+        # Set observation names and filter
+        self.dx = self.dx[self.adata.obs['obs_name_orig'].astype(str)]
+        self.dx = self.dx[self.dx.obs.position == position_adata]
+
+        return self.dx
 
     def extract_roi_from_morphology(self):
         """
@@ -219,13 +283,9 @@ class XeniumMacsimaRegistration:
         numpy.ndarray
             Cropped and preprocessed morphology focus ROI
         """
-        dna_mf = preprocess_reg(
-                                self.xenium_data["morphology_focus"]["scale0"].image.data[0, ...],
+        self.dna_mf_roi = preprocess_reg(
+                                self.aligned_data["morphology_focus"]["scale0"].image.data[0, ...],
                                 self.scale_factor)
-        self.dna_mf_roi = dna_mf[self.bbox[1]:self.bbox[3], self.bbox[0]:self.bbox[2]]
-        self.cropped_mf = self.xenium_data["morphology_focus"]["scale0"].image.data[:,
-            self.bbox_unscaled[1]:self.bbox_unscaled[3],
-            self.bbox_unscaled[0]:self.bbox_unscaled[2]]
         
         return self.dna_mf_roi
     
@@ -252,7 +312,8 @@ class XeniumMacsimaRegistration:
         
         print("Applying transformation to full MACSima image")
         self.aligned_macsima = dask_image.ndinterp.affine_transform(
-            self.macsima_image, self.affine_2d_full, output_shape=self.cropped_mf.shape[1:],
+            self.macsima_image, self.affine_2d_full,
+            output_shape=self.aligned_data["morphology_focus"]["scale0"].image.data.shape[1:],
             output_chunks=(1024, 1024) 
         )
 
@@ -264,50 +325,16 @@ class XeniumMacsimaRegistration:
 
         return self.affine_2d_corrected, self.affine_2d_full, self.aligned_macsima
     
-    def _transform_boundaries(self):
+
+    def add_macsima_dapi(self):
         """
-        Transform cell and nucleus boundaries to aligned coordinate system.
-        """
-        if self.bbox is None:
-            raise ValueError("Bounding box not set. Run calculate_roi_bbox() first.")
-
-        cell_names = self.dx.obs.index
-        self.aligned_data["cell_boundaries"] = self.xenium_data['cell_boundaries'].loc[cell_names]
-        self.aligned_data["nucleus_boundaries"] = self.xenium_data['nucleus_boundaries'].loc[cell_names] 
-        
-        for name in self.aligned_data["cell_boundaries"].index:
-            poly = self.aligned_data["cell_boundaries"].loc[name, 'geometry']
-            roi_poly = affinity.scale(poly, xfact=self.transform_factor, yfact=self.transform_factor, origin=(0, 0))
-            full_poly = affinity.translate(roi_poly,
-                                           xoff=-self.bbox_unscaled[0],
-                                           yoff=-self.bbox_unscaled[1])
-            self.aligned_data["cell_boundaries"].loc[name, 'geometry'] = full_poly
-
-
-        for name in self.aligned_data['nucleus_boundaries'].index:
-            poly = self.aligned_data['nucleus_boundaries'].loc[name, 'geometry']
-            roi_poly = affinity.scale(poly, xfact=self.transform_factor, yfact=self.transform_factor, origin=(0, 0))
-            full_poly = affinity.translate(roi_poly,
-                                           xoff=-self.bbox_unscaled[0],
-                                           yoff=-self.bbox_unscaled[1])
-            self.aligned_data['nucleus_boundaries'].loc[name, 'geometry'] = full_poly
-
-        # Reset transformations to Identity
-        set_transformation(self.aligned_data['cell_boundaries'], Identity(), "global")
-        set_transformation(self.aligned_data['nucleus_boundaries'], Identity(), "global")
-
-    def create_aligned_spatialdata(self):
-        """
-        Create a new SpatialData object with aligned images and boundaries.
+        Adds the full scale registered MACSima DAPI image
+        to the aligned SpatialData object
         
         Returns:
         --------
-        spatialdata.SpatialData
-            New aligned spatial data object
+        None
         """
-        # Filter cell/nucleus boundaries and scale + translate them
-        self._transform_boundaries()
-        
         # Add aligned MACSima image
         macsima_model = Image2DModel.parse(
             dask.array.expand_dims(self.aligned_macsima, 0),
@@ -316,23 +343,6 @@ class XeniumMacsimaRegistration:
         )
         self.aligned_data['macsima_DAPI'] = macsima_model
         
-        # Add cell labels
-        cell_label_model = Labels2DModel.parse(
-            self.xenium_data["cell_labels"]["scale0"].image.data[
-            self.bbox_unscaled[1]:self.bbox_unscaled[3],
-            self.bbox_unscaled[0]:self.bbox_unscaled[2]],
-            dims=('y', 'x'),
-        )
-        self.aligned_data['cell_labels'] = cell_label_model
-
-        # Add full_scale morphology focus
-        full_mf_model = Image2DModel.parse(
-            self.cropped_mf,
-            dims=('c', 'y', 'x'),
-        )
-        self.aligned_data['morphology_focus'] = full_mf_model
-        
-        return self.aligned_data
     
     def add_additional_macsima_images(self, macsima_folder):
         """
@@ -385,7 +395,7 @@ class XeniumMacsimaRegistration:
         other_img_transformed = dask_image.ndinterp.affine_transform(
             other_img,
             self.affine_2d_full,
-            output_shape=self.cropped_mf.shape[1:],
+            output_shape=self.aligned_data["morphology_focus"]["scale0"].image.data.shape[1:],
             output_chunks=(1024, 1024)
         )
         
@@ -398,54 +408,8 @@ class XeniumMacsimaRegistration:
         )
         self.aligned_data[name] = other_image_model
     
-    def add_table_and_transcripts(self):
-        """
-        Add cell table and filtered transcripts to aligned data.
-        """
-        # Prepare table
-        # Clear any existing spatial data metadata to avoid conflicts
-        if hasattr(self.dx, 'uns'):
-            if 'spatialdata_attrs' in self.dx.uns:
-                del self.dx.uns['spatialdata_attrs']
-        
-        self.dx.obs["region"] = "cell_boundaries"
-        self.dx.obs["region"] = self.dx.obs["region"].astype("category")
-        self.dx.obs["instance_id"] = self.dx.obs_names
-        
-        table = TableModel.parse(
-            self.dx, region="cell_boundaries",
-            region_key="region",
-            instance_key="instance_id", overwrite_metadata=True
-        )
-        self.aligned_data["adata"] = table
-        
-        # Add filtered transcripts
-        min_x = self.bbox[0] * self.scale_factor / self.transform_factor
-        min_y = self.bbox[1] * self.scale_factor / self.transform_factor
-        max_x = self.bbox[2] * self.scale_factor / self.transform_factor
-        max_y = self.bbox[3] * self.scale_factor / self.transform_factor
- 
-        # Filter transcripts using original coordinate system 
-        filtered_transcripts = self.xenium_data['transcripts'][
-            (self.xenium_data['transcripts']['x'] >= min_x) &
-            (self.xenium_data['transcripts']['x'] <= max_x) &
-            (self.xenium_data['transcripts']['y'] >= min_y) &
-            (self.xenium_data['transcripts']['y'] <= max_y)
-        ]
-
-        #move transcripts to the new coordinate system
-        filtered_transcripts['x'] = filtered_transcripts['x'] - min_x
-        filtered_transcripts['y'] = filtered_transcripts['y'] - min_y
-
-        filtered_transcripts['x'] = filtered_transcripts['x'] * self.transform_factor
-        filtered_transcripts['y'] = filtered_transcripts['y'] * self.transform_factor
-
-        self.aligned_data['transcripts'] = filtered_transcripts
-        set_transformation(self.aligned_data['transcripts'], Identity(), "global")
-    
     def quantify_proteins(self):
         pass
-
 
     def create_registration_summary_plot(self):
         """

@@ -138,10 +138,10 @@ for position_adata, roi_macsima in position_roi_map.items():
     bbox = registration.calculate_roi_bbox()
     print(f"ROI bounding box: x=({bbox[0]:.1f}, {bbox[2]:.1f}), y=({bbox[1]:.1f}, {bbox[3]:.1f})")
 
-    # Extract ROI from morphology focus
-    print("Extracting ROI from morphology focus...")
+    # Crop the SpatialData object and Extract ROI from morphology focus
+    print("Cropping the SpatialData Object")
+    aligned_data = registration.crop()
     mf_roi = registration.extract_roi_from_morphology() # cyx -> yx
-    print(f"Morphology focus ROI shape: {mf_roi.shape}")
 
     # Perform image registration
     print("Registering MACSIMA image to morphology focus...")
@@ -151,25 +151,15 @@ for position_adata, roi_macsima in position_roi_map.items():
     print(f"Morphology ROI shape: {mf_roi.shape}")
     print(f"Aligned MACSIMA shape: {aligned_macsima.shape}")
 
-    # Create aligned spatial data object (without additional images first)
-    print("Creating aligned SpatialData object...")
-
-    # Create the basic aligned data object
-    aligned_data = registration.create_aligned_spatialdata()
+    # Add the MACSima DAPI image to the SpatialData object
+    registration.add_macsima_dapi()
     print("BASIC ALIGNED DATA CREATED SUCCESSFULLY")
     print(f"Created basic aligned data with images: {list(aligned_data.images.keys())}")
     print(f"Created basic aligned data with shapes: {list(aligned_data.shapes.keys())}")
     print(f"Created basic aligned data with labeles: {list(aligned_data.labels.keys())}")
 
-    # Add cell table and transcripts first (lighter operation)
-    print("Adding cell table and transcripts...")
-    registration.add_table_and_transcripts()
-
-    print(f"Added table with {aligned_data.tables['adata'].n_obs} cells")
-    print(f"Added {len(aligned_data['transcripts'])} transcripts")
-
     print("Adding additional MACSima channel images...")
-    registration.add_additional_macsima_images(macsima_roi_folder)
+    #registration.add_additional_macsima_images(macsima_roi_folder)
     print(f"Successfully added additional images. Total images: {len(aligned_data.images)}")
 
     print("Quantifying proteins")
@@ -198,7 +188,7 @@ for position_adata, roi_macsima in position_roi_map.items():
     print(f"Output location: {sdata_output_path}")
     print(f"Processed slide: {slide_name}")
     print(f"ROI position: {position_adata}")
-    print(f"Cells analyzed: {aligned_data['adata'].n_obs}")
+    print(f"Cells analyzed: {aligned_data['table'].n_obs}")
     print(f"Images aligned: {len(aligned_data.images)}")
     print(f"Transcripts included: {len(aligned_data['transcripts'])}")
     print(f"Output saved to: {output_path}")
