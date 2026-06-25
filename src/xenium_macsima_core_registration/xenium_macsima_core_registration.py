@@ -11,20 +11,17 @@ Main components:
 """
 
 import argparse
-import os
 
 
-import dask
 import dask_image.ndinterp
 import skimage
-import tifffile
 import spatialdata_io
-import zarr
 import numpy as np
 import cv2 as cv
 import spatialdata as sd
 import matplotlib.pyplot as plt
 import scanpy as sc
+import harpy as hp
 from spatialdata.models import Image2DModel
 from spatialdata.transformations import get_transformation, set_transformation, Identity
 
@@ -145,9 +142,10 @@ class XeniumMacsimaRegistration:
             filter_table=True)
 
         print("Transfroming to global coordinate system")
+        self.aligned_data = self.aligned_data.transform_to_coordinate_system("global")
         # cell_boundaries
-        self.aligned_data["cell_boundaries"] = self.aligned_data.transform_element_to_coordinate_system(
-                element_name= "cell_boundaries", target_coordinate_system="global")
+        #self.aligned_data["cell_boundaries"] = self.aligned_data.transform_element_to_coordinate_system(
+        #        element_name= "cell_boundaries", target_coordinate_system="global")
         sd.transformations.set_transformation(self.aligned_data["cell_boundaries"],
                                               to_coordinate_system="global", transformation=Identity()) 
         self.aligned_data["cell_boundaries"].geometry = self.aligned_data["cell_boundaries"].geometry.translate(
@@ -157,8 +155,8 @@ class XeniumMacsimaRegistration:
 
 
         # nucleus_boundaries
-        self.aligned_data["nucleus_boundaries"] = self.aligned_data.transform_element_to_coordinate_system(
-                element_name= "nucleus_boundaries", target_coordinate_system="global")
+        #self.aligned_data["nucleus_boundaries"] = self.aligned_data.transform_element_to_coordinate_system(
+        #        element_name= "nucleus_boundaries", target_coordinate_system="global")
         sd.transformations.set_transformation(self.aligned_data["nucleus_boundaries"],
                                               to_coordinate_system="global", transformation=Identity()) 
         self.aligned_data["nucleus_boundaries"].geometry = self.aligned_data["nucleus_boundaries"].geometry.translate(
@@ -167,14 +165,14 @@ class XeniumMacsimaRegistration:
         )
 
         # cell_labels
-        self.aligned_data["cell_labels"] = self.aligned_data.transform_element_to_coordinate_system(
-                element_name= "cell_labels", target_coordinate_system="global")
+        #self.aligned_data["cell_labels"] = self.aligned_data.transform_element_to_coordinate_system(
+        #        element_name= "cell_labels", target_coordinate_system="global")
         sd.transformations.set_transformation(self.aligned_data["cell_labels"],
                                               to_coordinate_system="global", transformation=Identity()) 
         
        # morphology_focus 
-        self.aligned_data["morphology_focus"] = self.aligned_data.transform_element_to_coordinate_system(
-                element_name= "morphology_focus", target_coordinate_system="global")
+        #self.aligned_data["morphology_focus"] = self.aligned_data.transform_element_to_coordinate_system(
+        #        element_name= "morphology_focus", target_coordinate_system="global")
         sd.transformations.set_transformation(self.aligned_data["morphology_focus"],
                                               to_coordinate_system="global", transformation=Identity()) 
         
@@ -196,25 +194,36 @@ class XeniumMacsimaRegistration:
         return self.aligned_data
 
 
-    def load_macsima_image(self, macsima_path):
+    def load_macsima_images(self, macsima_path):
         """
         Load MACSima image.
         
         Parameters:
         -----------
         macsima_path : str
-            Path to the MACSima TIFF image
+            Path to the MACSima OME-TIFF images
             
         Returns:
         --------
-        dask.array
-            MACSima image as zarr-backed dask array
+        SpatialData.models.Image2DModel
+        MACSima images as zarr-backed dask array
         """
         print(f"Loading MACSima image from {macsima_path}")
 
-        self.macsima_image = tifffile.imread(macsima_path, aszarr=True)
-        self.macsima_image = zarr.open(self.macsima_image, mode="r")
-        self.macsima_image = dask.array.from_zarr(self.macsima_image["0"])
+        macsima = hp.io.macsima(macsima_path,
+              image_name="macsima",
+              to_coordinate_system="global",
+              c_subset=None,
+              remove_bleached=True,
+              remove_dapi=True,
+              include_roi_id_in_channel_name=False)
+
+        channels = macsima["macsima"].c.values.tolist()
+        channels = {c:i for i,c in enumerate(channels)}
+        channels = {k:v for k,v in channels.items() if "None" not in k}
+
+        self.macsima_image = macsima["macsima"][list(channels.values()), ...]
+        self.macsima_image = sd.models.Image2DModel.parse(self.macsima_image, c_coords=list(channels.keys()))
         return self.macsima_image
     
     def calculate_roi_bbox(self):
@@ -299,36 +308,26 @@ class XeniumMacsimaRegistration:
             (affine_matrix_2d, affine_matrix_full, aligned_macsima)
         """
         print("Preprocessing MACSima image for registration")
-        self.dna_macsima = preprocess_reg(self.macsima_image, self.scale_factor)
+        self.dna_macsima = self.macsima_image[self.macsima_image.c.values == "0_DAPI_DAPI"][0, ...]
+        self.dna_macsima = preprocess_reg(self.dna_macsima, self.scale_factor)
         
         print("Computing alignment matrix")
-        crop_affine_cyx = get_align_matrix(self.dna_macsima, self.dna_mf_roi, 1)
-        self.affine_2d_corrected = crop_affine_cyx[1:3, 1:4]  # Extract Y,X part
-        
-        # Scale affine matrix for full-resolution image
-        self.affine_2d_full = self.affine_2d_corrected.copy()
-        self.affine_2d_full[0, 2] *= self.scale_factor  # Scale Y translation
-        self.affine_2d_full[1, 2] *= self.scale_factor  # Scale X translation
+        self.affine = get_align_matrix(self.dna_macsima, self.dna_mf_roi, self.scale_factor)
         
         print("Applying transformation to full MACSima image")
         self.aligned_macsima = dask_image.ndinterp.affine_transform(
-            self.macsima_image, self.affine_2d_full,
-            output_shape=self.aligned_data["morphology_focus"]["scale0"].image.data.shape[1:],
-            output_chunks=(1024, 1024) 
+            self.macsima_image, self.affine,
+            output_shape=(len(self.macsima_image.c.values),
+                          *self.aligned_data["morphology_focus"]["scale0"].image.data.shape[1:]),
+            output_chunks=(1, 1024, 1024) 
         )
 
-        print("Applying transformation to downscaled MACSima image")
-        self.dna_macsima_registered = dask_image.ndinterp.affine_transform(
-            self.dna_macsima, self.affine_2d_corrected, output_shape=self.dna_mf_roi.shape,
-            output_chunks=(256, 256) 
-        )
-
-        return self.affine_2d_corrected, self.affine_2d_full, self.aligned_macsima
+        return self.affine, self.aligned_macsima
     
 
-    def add_macsima_dapi(self):
+    def add_macsima(self):
         """
-        Adds the full scale registered MACSima DAPI image
+        Adds the full scale registered MACSima image
         to the aligned SpatialData object
         
         Returns:
@@ -337,76 +336,12 @@ class XeniumMacsimaRegistration:
         """
         # Add aligned MACSima image
         macsima_model = Image2DModel.parse(
-            dask.array.expand_dims(self.aligned_macsima, 0),
-            c_coords=[0],
+            self.aligned_macsima,
+            c_coords=self.macsima_image.c.values.tolist(),
             dims=('c', 'y', 'x'),
         )
-        self.aligned_data['macsima_DAPI'] = macsima_model
+        self.aligned_data['macsima'] = macsima_model
         
-    
-    def add_additional_macsima_images(self, macsima_folder):
-        """
-        Add additional MACSima channel images to the aligned data.
-        
-        Parameters:
-        -----------
-        macsima_folder : str
-            Path to folder containing MACSima images
-        """
-        try:
-            macsima_images = [f for f in os.listdir(macsima_folder) if f.endswith('.tif')]
-        except (FileNotFoundError, OSError) as e:
-            print(f"Warning: Could not access MACSima folder {macsima_folder}: {e}")
-            return
-        
-        # Filter out images we don't want to include (DAPI + None + Background)
-        filtered_images = []
-        for img_name in macsima_images: 
-            if 'DAPI' in img_name or 'None' in img_name and "_S_" not in img_name:
-                continue
-            filtered_images.append(img_name)
-        
-        print(f"Found {len(macsima_images)} total images, processing {len(filtered_images)} images")
-        
-        for i, img_name in enumerate(filtered_images, 1):
-            img_path = os.path.join(macsima_folder, img_name)
-            img_key = f"macsima_{img_name.replace('.tif', '')}"
-            self.added_macsima_channels.append(img_key)
-            
-            print(f"Adding image {i}/{len(filtered_images)}: {img_key}")
-            self._add_transformed_image(img_path, img_key)
-    
-    def _add_transformed_image(self, image_path, name):
-        """
-        Helper function to add a transformed image to SpatialData object.
-        
-        Parameters:
-        -----------
-        image_path : str
-            Path to the image file
-        name : str
-            Name for the image in the spatial data object
-        """
-        other_img = tifffile.imread(image_path, aszarr=True)
-        other_img = zarr.open(other_img, mode="r")
-        other_img = dask.array.from_zarr(other_img["0"])
-
-        # Transform the image
-        other_img_transformed = dask_image.ndinterp.affine_transform(
-            other_img,
-            self.affine_2d_full,
-            output_shape=self.aligned_data["morphology_focus"]["scale0"].image.data.shape[1:],
-            output_chunks=(1024, 1024)
-        )
-        
-        # Create model
-        other_img_transformed = dask.array.expand_dims(other_img_transformed, 0)
-        other_image_model = Image2DModel.parse(
-            other_img_transformed,
-            c_coords=[0],
-            dims=('c', 'y', 'x'),
-        )
-        self.aligned_data[name] = other_image_model
     
     def quantify_proteins(self):
         pass

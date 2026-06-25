@@ -111,15 +111,9 @@ for position_adata, roi_macsima in position_roi_map.items():
     if os.path.exists(output_path):
         print(f"Output for Position {position_adata} and ROI {roi_macsima} already exists at {output_path}, skipping...")
         continue
+    os.mkdir(output_path)
 
     macsima_roi_folder = os.path.join(macsima_folder, f"ROI{roi_macsima}")
-    files_mf = os.listdir(macsima_roi_folder)
-    files_mf = [f for f in files_mf if 'DAPI' in f and 'C-000' in f]
-    files_mf = [f for f in files_mf if '_B_' not in f]  # Exclude files with '_B_'
-    print(f"DAPI Files in MACSIMA folder for ROI {roi_macsima}: {files_mf} using the first one.")
-    assert len(files_mf) == 1, f"Expected exactly one DAPI file in MACSIMA folder for ROI {roi_macsima}, but found: {files_mf}"
-    dapi_file = files_mf[0]
-    macsima_image_path = os.path.join(macsima_roi_folder, dapi_file)
 
     # Align data tables
     print("Aligning annotated data with Xenium table...")
@@ -130,7 +124,7 @@ for position_adata, roi_macsima in position_roi_map.items():
 
     # Load MACSIMA image
     print("Loading MACSIMA image...")
-    macsima_img = registration.load_macsima_image(macsima_image_path)
+    macsima_img = registration.load_macsima_images(macsima_roi_folder)
     print(f"MACSIMA image shape: {macsima_img.shape}")
 
     # Calculate ROI bounding box
@@ -145,34 +139,29 @@ for position_adata, roi_macsima in position_roi_map.items():
 
     # Perform image registration
     print("Registering MACSIMA image to morphology focus...")
-    affine_2d, affine_2d_full, aligned_macsima = registration.register_images()
+    affine, aligned_macsima = registration.register_images()
 
     print("Registration completed successfully")
     print(f"Morphology ROI shape: {mf_roi.shape}")
     print(f"Aligned MACSIMA shape: {aligned_macsima.shape}")
 
-    # Add the MACSima DAPI image to the SpatialData object
-    registration.add_macsima_dapi()
+    # Add the MACSima image to the SpatialData object
+    registration.add_macsima()
     print("BASIC ALIGNED DATA CREATED SUCCESSFULLY")
     print(f"Created basic aligned data with images: {list(aligned_data.images.keys())}")
     print(f"Created basic aligned data with shapes: {list(aligned_data.shapes.keys())}")
     print(f"Created basic aligned data with labeles: {list(aligned_data.labels.keys())}")
 
-    print("Adding additional MACSima channel images...")
-    #registration.add_additional_macsima_images(macsima_roi_folder)
-    print(f"Successfully added additional images. Total images: {len(aligned_data.images)}")
-
-    print("Quantifying proteins")
+    #print("Quantifying proteins")
     #registration.quantify_proteins()
-    print("Successfully quantified proteins")
+    #print("Successfully quantified proteins")
 
     # Create registration summary plot
-    print("Generating registration summary visualization...")
-    summary_figure = registration.create_registration_summary_plot()
-    os.mkdir(output_path)
-    summary_figure.savefig(os.path.join(output_path,
-        f'POS_{position_adata}_registration_summary.png'), dpi=300)
-    print("Registration summary plot generated successfully!")
+    #print("Generating registration summary visualization...")
+    #summary_figure = registration.create_registration_summary_plot()
+    #summary_figure.savefig(os.path.join(output_path,
+    #    f'POS_{position_adata}_registration_summary.png'), dpi=300)
+    #print("Registration summary plot generated successfully!")
 
     # Save the aligned spatial data
     sdata_output_path = os.path.join(output_path, f'Pos_{position_adata}_ROI_{roi_macsima}.zarr')
@@ -188,9 +177,3 @@ for position_adata, roi_macsima in position_roi_map.items():
     print(f"Output location: {sdata_output_path}")
     print(f"Processed slide: {slide_name}")
     print(f"ROI position: {position_adata}")
-    print(f"Cells analyzed: {aligned_data['table'].n_obs}")
-    print(f"Images aligned: {len(aligned_data.images)}")
-    print(f"Transcripts included: {len(aligned_data['transcripts'])}")
-    print(f"Output saved to: {output_path}")
-
-
