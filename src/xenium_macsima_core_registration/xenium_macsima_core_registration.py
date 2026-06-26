@@ -16,6 +16,8 @@ import argparse
 import dask_image.ndinterp
 import skimage
 import spatialdata_io
+import dask.array
+
 import numpy as np
 import cv2 as cv
 import spatialdata as sd
@@ -23,6 +25,8 @@ import matplotlib.pyplot as plt
 import scanpy as sc
 import harpy as hp
 import anndata as ad
+
+from matplotlib.colors import Normalize
 from spatialdata.models import Image2DModel
 from spatialdata.transformations import get_transformation, set_transformation, Identity
 
@@ -232,6 +236,7 @@ class XeniumMacsimaRegistration:
         channels = {c:i for i,c in enumerate(channels)}
         channels = {k:v for k,v in channels.items() if "None" not in k}
 
+        sd.transformations.remove_transformation(macsima["macsima"])
         self.macsima_image = macsima["macsima"][list(channels.values()), ...]
         self.macsima_image = sd.models.Image2DModel.parse(self.macsima_image, c_coords=list(channels.keys()))
         return self.macsima_image
@@ -385,69 +390,70 @@ class XeniumMacsimaRegistration:
     def create_registration_summary_plot(self):
         """
         Create a comprehensive summary plot showing registration results.
-        
+
         Returns:
         --------
         matplotlib.figure.Figure
             Summary figure showing registration quality
         """
+
         fig, axes = plt.subplots(2, 2, figsize=(12, 12))
         fig.suptitle('Xenium-MACSima Registration Summary', fontsize=16, fontweight='bold')
-        
+
         # Top left: Original morphology focus with cell locations
-        axes[0, 0].imshow(self.dna_mf_roi, cmap='gray')
-        axes[0, 0].scatter(
-            self.dx.obsm['spatial_transformed'][:, 0] - self.bbox[0],
-            self.dx.obsm['spatial_transformed'][:, 1] - self.bbox[1],
-            color='red', s=1, alpha=0.1, label='Cell centers'
+        self.aligned_data["plot_img"] = sd.models.Image2DModel.parse(
+            dask.array.stack((self.aligned_data["morphology_focus"]["scale0"].image[0, ...],  # R = Xenium
+                            dask.array.zeros_like(self.aligned_data["macsima"][0, ...]),      # G = 0 
+                            dask.array.zeros_like(self.aligned_data["macsima"][0, ...]))),    # B = 0
+            c_coords=("r", "g", "b")
         )
-        axes[0, 0].set_title('Target: Xenium Morphology Focus')
-        axes[0, 0].legend()
+        axes[0, 0] = self.aligned_data.pl.render_images("plot_img", channel = ["r", "g", "b"],
+                        norm=Normalize(vmin = 100, vmax = 8000, clip = True)
+                        ).pl.show(scalebar_dx = 212.5, scalebar_units = "nm", ax = axes[0, 0], return_ax=True)
+        axes[0, 0].set_title('Target: Xenium DAPI')
         axes[0, 0].axis('off')
-        
-        # Top right: Original MACSima 
-        if self.dna_macsima_registered.size > 0:
-            axes[0, 1].imshow(self.dna_macsima, cmap='gray')
-            axes[0, 1].set_title('Source: MACSima DAPI')
-        else:
-            axes[0, 1].text(0.5, 0.5, 'MACSima ROI\nEmpty or Invalid', 
-                           ha='center', va='center', transform=axes[0, 1].transAxes)
-            axes[0, 1].set_title('Source: MACSima DAPI (Empty)')
+
+
+        # Top right: Original MACSima
+        self.aligned_data["plot_img"] = sd.models.Image2DModel.parse(
+            dask.array.stack((dask.array.zeros_like(self.macsima_image[0, ...]),   # R = 0
+                            self.macsima_image[0, ...],                            # G = MACSima (original)
+                            dask.array.zeros_like(self.macsima_image[0, ...]))),   # B = 0
+            c_coords=("r", "g", "b")
+        )
+        axes[0, 1] = self.aligned_data.pl.render_images("plot_img", channel = ["r", "g", "b"],
+                          norm=Normalize(vmin = 100, vmax = 8000, clip = True)
+                          ).pl.show(scalebar_dx = 170.0, scalebar_units = "nm", ax = axes[0, 1], return_ax=True)
+        axes[0, 1].set_title('Source: MACSima DAPI')
         axes[0, 1].axis('off')
-        
+
         # Bottom left: Aligned MACSima with cell boundaries
-        if self.dna_macsima_registered.size > 0:
-            axes[1, 0].imshow(self.dna_macsima_registered, cmap='gray')
-            axes[1, 0].scatter(
-                self.dx.obsm['spatial_transformed'][:, 0] - self.bbox[0],
-                self.dx.obsm['spatial_transformed'][:, 1] - self.bbox[1],
-                c='cyan', s=1, alpha=0.1, label='Cell centers'
-            )
-        else:
-            axes[1, 0].text(0.5, 0.5, 'MACSima ROI\nEmpty or Invalid', 
-                           ha='center', va='center', transform=axes[1, 0].transAxes)
-        
-        axes[1, 0].set_title('Aligned: MACSima with Cell Centroids')
-        axes[1, 0].legend()
+        axes[1, 0] = self.aligned_data.pl.render_images("macsima", channel = "0_DAPI_DAPI",
+                            palette = "blue", norm=Normalize(vmin = 100, vmax = 4000, clip = True)
+            ).pl.render_shapes("cell_boundaries", outline_width = 0.5,
+                            outline_color = "red", fill_alpha = 0,
+                            outline_alpha = 1
+            ).pl.show(scalebar_dx = 212.5, scalebar_units = "nm", ax = axes[1, 0], return_ax=True)
+        axes[1, 0].set_title('Aligned: MACSima with Cell Boundaries')
         axes[1, 0].axis('off')
-        
+
+
         # Bottom right: Overlay comparison
-        if self.dna_macsima_registered.size > 0:
-            # Create RGB overlay
-            overlay = np.zeros((*self.dna_mf_roi.shape, 3), dtype="uint8")
-            
-            overlay[:, :, 0] = self.dna_macsima_registered.astype("uint8") # MACSima in red
-            overlay[:, :, 1] = self.dna_mf_roi.astype("uint8")             # Morphology focus in green
-            
-            axes[1, 1].imshow(overlay)
-            axes[1, 1].set_title('Overlay: Registration Quality\n(Red=MACSima, Green=Morphology)')
-        else:
-            # Show just the morphology focus
-            axes[1, 1].imshow(self.dna_mf_roi, cmap='gray')
-            axes[1, 1].set_title('Morphology Focus Only\n(MACSima ROI Empty)')
+        self.aligned_data["plot_img"] = sd.models.Image2DModel.parse(
+            dask.array.stack((self.aligned_data["morphology_focus"]["scale0"].image[0, ...], # R = Xenium
+                            self.aligned_data["macsima"][0, ...],                            # G = MACSima
+                            dask.array.zeros_like(self.aligned_data["macsima"][0, ...]))),   # B = 0
+            c_coords=("r", "g", "b")
+        )
+        axes[1, 1] = self.aligned_data.pl.render_images("plot_img", channel = ["r", "g", "b"],
+                        norm=Normalize(vmin = 100, vmax = 8000, clip = True)
+                        ).pl.show(scalebar_dx = 212.5, scalebar_units = "nm", ax = axes[1, 1], return_ax=True)
+        axes[1, 1].set_title('Red=MACSima DAPI, Green= Xenium DAPI')
         axes[1, 1].axis('off')
-        
-        plt.tight_layout()
+
+        # Cleanup 
+        fig.delaxes(fig.axes[-1]) # Reomove colorbar
+        del self.aligned_data["plot_img"]
 
         return fig
 
