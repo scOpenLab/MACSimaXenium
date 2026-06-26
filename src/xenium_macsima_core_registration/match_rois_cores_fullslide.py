@@ -112,7 +112,6 @@ for position_adata, roi_macsima in position_roi_map.items():
         continue
     os.mkdir(output_path)
     sdata_output_path = os.path.join(output_path, f'Pos_{position_adata}_ROI_{roi_macsima}.zarr')
-
     macsima_roi_folder = os.path.join(macsima_folder, f"ROI{roi_macsima}")
 
     # Align data tables
@@ -157,10 +156,10 @@ for position_adata, roi_macsima in position_roi_map.items():
 
     # Create registration summary plot
     #print("Generating registration summary visualization...")
-    #summary_figure = registration.create_registration_summary_plot()
-    #summary_figure.savefig(os.path.join(output_path,
-    #    f'POS_{position_adata}_registration_summary.png'), dpi=300)
-    #print("Registration summary plot generated successfully!")
+    summary_figure = registration.create_registration_summary_plot()
+    summary_figure.savefig(os.path.join(output_path,
+        f'POS_{position_adata}_registration_summary.pdf'), dpi=600)
+    print("Registration summary plot generated successfully!")
 
     # Save the aligned spatial data
 
