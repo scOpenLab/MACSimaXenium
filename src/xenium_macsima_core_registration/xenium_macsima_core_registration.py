@@ -22,6 +22,7 @@ import spatialdata as sd
 import matplotlib.pyplot as plt
 import scanpy as sc
 import harpy as hp
+import anndata as ad
 from spatialdata.models import Image2DModel
 from spatialdata.transformations import get_transformation, set_transformation, Identity
 
@@ -144,8 +145,6 @@ class XeniumMacsimaRegistration:
         print("Transfroming to global coordinate system")
         self.aligned_data = self.aligned_data.transform_to_coordinate_system("global")
         # cell_boundaries
-        #self.aligned_data["cell_boundaries"] = self.aligned_data.transform_element_to_coordinate_system(
-        #        element_name= "cell_boundaries", target_coordinate_system="global")
         sd.transformations.set_transformation(self.aligned_data["cell_boundaries"],
                                               to_coordinate_system="global", transformation=Identity()) 
         self.aligned_data["cell_boundaries"].geometry = self.aligned_data["cell_boundaries"].geometry.translate(
@@ -153,10 +152,7 @@ class XeniumMacsimaRegistration:
                 yoff = -self.bbox_unscaled[1]
         )
 
-
         # nucleus_boundaries
-        #self.aligned_data["nucleus_boundaries"] = self.aligned_data.transform_element_to_coordinate_system(
-        #        element_name= "nucleus_boundaries", target_coordinate_system="global")
         sd.transformations.set_transformation(self.aligned_data["nucleus_boundaries"],
                                               to_coordinate_system="global", transformation=Identity()) 
         self.aligned_data["nucleus_boundaries"].geometry = self.aligned_data["nucleus_boundaries"].geometry.translate(
@@ -165,17 +161,12 @@ class XeniumMacsimaRegistration:
         )
 
         # cell_labels
-        #self.aligned_data["cell_labels"] = self.aligned_data.transform_element_to_coordinate_system(
-        #        element_name= "cell_labels", target_coordinate_system="global")
         sd.transformations.set_transformation(self.aligned_data["cell_labels"],
                                               to_coordinate_system="global", transformation=Identity()) 
         
        # morphology_focus 
-        #self.aligned_data["morphology_focus"] = self.aligned_data.transform_element_to_coordinate_system(
-        #        element_name= "morphology_focus", target_coordinate_system="global")
         sd.transformations.set_transformation(self.aligned_data["morphology_focus"],
                                               to_coordinate_system="global", transformation=Identity()) 
-        
         print("Cropping and transforming transcripts")
         # Copy and fix partitioning
         self.aligned_data["transcripts"] = sd.models.PointsModel.parse(
@@ -193,6 +184,25 @@ class XeniumMacsimaRegistration:
 
         return self.aligned_data
 
+    def write_crop(self, output_path):
+        """
+        Load MACSima image.
+        
+        Parameters:
+        -----------
+        output_path : str
+            Path to write the SpaitalData object to
+            
+        Returns:
+        --------
+        None
+
+        """
+        self.aligned_data.write(
+            output_path,
+            overwrite=True,
+            consolidate_metadata=True,
+        )
 
     def load_macsima_images(self, macsima_path):
         """
@@ -235,6 +245,7 @@ class XeniumMacsimaRegistration:
             
         Returns:
         --------
+        None
         tuple
             (x0, y0, x1, y1) bounding box coordinates
         """
@@ -280,23 +291,6 @@ class XeniumMacsimaRegistration:
 
         return self.dx
 
-    def extract_roi_from_morphology(self):
-        """
-        Extract ROI from morphology focus image based on bounding box.
-        
-        Parameters:
-        -----------
-            
-        Returns:
-        --------
-        numpy.ndarray
-            Cropped and preprocessed morphology focus ROI
-        """
-        self.dna_mf_roi = preprocess_reg(
-                                self.aligned_data["morphology_focus"]["scale0"].image.data[0, ...],
-                                self.scale_factor)
-        
-        return self.dna_mf_roi
     
     def register_images(self):
         """
@@ -307,6 +301,10 @@ class XeniumMacsimaRegistration:
         tuple
             (affine_matrix_2d, affine_matrix_full, aligned_macsima)
         """
+        print("Preprocessing Xenium image for registration")
+        self.dna_mf_roi = preprocess_reg(
+                                self.aligned_data["morphology_focus"]["scale0"].image.data[0, ...],
+                                self.scale_factor)
         print("Preprocessing MACSima image for registration")
         self.dna_macsima = self.macsima_image[self.macsima_image.c.values == "0_DAPI_DAPI"][0, ...]
         self.dna_macsima = preprocess_reg(self.dna_macsima, self.scale_factor)
@@ -342,9 +340,47 @@ class XeniumMacsimaRegistration:
         )
         self.aligned_data['macsima'] = macsima_model
         
+
+    def write_macsima(self):
+        """
+        Writes the MACSima image to disk
+        """
+        self.aligned_data.write_element("macsima")
+
     
     def quantify_proteins(self):
-        pass
+        """
+        Quantifyies protein expression from the MACSima image (mean)
+        and merges the resulting table from the transcript count table from Xenium
+        """
+        self.aligned_data = hp.tb.allocate_intensity(self.aligned_data,
+                            image_name="macsima",
+                            labels_name="cell_labels",
+                            output_table_name='macsima_table',
+                            channels=None,
+                            mode='mean',
+                            obs_stats=None,
+                            to_coordinate_system='global',
+                            chunks=None,
+                            append=False,
+                            calculate_center_of_mass=False)
+        self.aligned_data["table"].obs.index = self.aligned_data["table"].obs.cell_labels
+        self.aligned_data["macsima_table"].obs.index = self.aligned_data["macsima_table"].obs.cell_ID
+        full_table = ad.concat(adatas=[self.aligned_data["table"], self.aligned_data["macsima_table"]],
+                               join="inner", merge = "unique", axis="var")
+        full_table.obs = full_table.obs.rename(columns = {"cell_id":"label_value"})
+        self.aligned_data["rna_protein_table"] = full_table
+
+    def write_proteins(self):
+        """
+        Writes the Xenium + MACSima table to disk and removes the old table for each technology.
+        """
+        self.aligned_data.write_element("rna_protein_table")
+        #del self.aligned_data["table"]
+        #del self.aligned_data["macsima_table"]
+        #self.aligned_data.delete_element_from_disk("table")
+        #self.aligned_data.delete_element_from_disk("macsima_table")
+
 
     def create_registration_summary_plot(self):
         """

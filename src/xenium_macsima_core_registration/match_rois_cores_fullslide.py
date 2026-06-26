@@ -44,7 +44,6 @@ registration = xenium_macsima_core_registration.XeniumMacsimaRegistration(scale_
 # Load Xenium spatial data
 print("Loading Xenium spatial data...")
 xenium_data = registration.load_xenium_data(xenium_folder)
-mf_img = xenium_data["morphology_focus"]["scale0"].image.data #cyx
 
 # Load annotated single-cell data
 print("Loading annotated single-cell data...")
@@ -112,6 +111,7 @@ for position_adata, roi_macsima in position_roi_map.items():
         print(f"Output for Position {position_adata} and ROI {roi_macsima} already exists at {output_path}, skipping...")
         continue
     os.mkdir(output_path)
+    sdata_output_path = os.path.join(output_path, f'Pos_{position_adata}_ROI_{roi_macsima}.zarr')
 
     macsima_roi_folder = os.path.join(macsima_folder, f"ROI{roi_macsima}")
 
@@ -135,26 +135,25 @@ for position_adata, roi_macsima in position_roi_map.items():
     # Crop the SpatialData object and Extract ROI from morphology focus
     print("Cropping the SpatialData Object")
     aligned_data = registration.crop()
-    mf_roi = registration.extract_roi_from_morphology() # cyx -> yx
+    print(f"Saving the cropped SpatialData to: {sdata_output_path}")
+    registration.write_crop(sdata_output_path)
+
 
     # Perform image registration
     print("Registering MACSIMA image to morphology focus...")
     affine, aligned_macsima = registration.register_images()
-
     print("Registration completed successfully")
-    print(f"Morphology ROI shape: {mf_roi.shape}")
-    print(f"Aligned MACSIMA shape: {aligned_macsima.shape}")
 
     # Add the MACSima image to the SpatialData object
     registration.add_macsima()
-    print("BASIC ALIGNED DATA CREATED SUCCESSFULLY")
-    print(f"Created basic aligned data with images: {list(aligned_data.images.keys())}")
-    print(f"Created basic aligned data with shapes: {list(aligned_data.shapes.keys())}")
-    print(f"Created basic aligned data with labeles: {list(aligned_data.labels.keys())}")
+    print(f"Saving the aligned MACSima image to SpatialData at: {sdata_output_path}")
+    registration.write_macsima()
 
-    #print("Quantifying proteins")
-    #registration.quantify_proteins()
-    #print("Successfully quantified proteins")
+    print("Quantifying proteins")
+    registration.quantify_proteins()
+    print("Successfully quantified proteins")
+    print(f"Saving the qunatified protein table to SpatialData at: {sdata_output_path}")
+    registration.write_proteins()
 
     # Create registration summary plot
     #print("Generating registration summary visualization...")
@@ -164,13 +163,6 @@ for position_adata, roi_macsima in position_roi_map.items():
     #print("Registration summary plot generated successfully!")
 
     # Save the aligned spatial data
-    sdata_output_path = os.path.join(output_path, f'Pos_{position_adata}_ROI_{roi_macsima}.zarr')
-    print(f"Saving aligned spatial data to: {sdata_output_path}")
-    aligned_data.write(
-        sdata_output_path,
-        overwrite=True,
-        consolidate_metadata=True,
-    )
 
     print("REGISTRATION COMPLETED SUCCESSFULLY")
     print("Successfully saved aligned spatial data!")
