@@ -1,6 +1,6 @@
 # MACSimaXenium
 
-**Cross-modal spatial integration of Xenium spatial transcriptomics and MACSima multiplexed immunofluorescence at single-cell resolution.**
+**Cross-modal registration of Xenium spatial transcriptomics and MACSima multiplexed immunofluorescence at single-cell resolution.**
 
 [![Python](https://img.shields.io/badge/python-≥3.10-blue.svg)](https://www.python.org/)
 [![SpatialData](https://img.shields.io/badge/framework-SpatialData-green.svg)](https://spatialdata.scverse.org/)
@@ -10,9 +10,7 @@
 
 ## Overview
 
-MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics data (10x Genomics) with **MACSima** multiplexed cyclic immunofluorescence (mxIF) imaging. Registration is performed per tissue microarray (TMA) core using SIFT-based feature matching and outputs multi-modal [`SpatialData`](https://spatialdata.scverse.org/) objects saved as SpatialData objects.
-
----
+MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics data with **MACSima** multiplexed cyclic immunofluorescence imaging. Registration is performed per tissue microarray (TMA) core using SIFT-based feature matching and outputs multi-modal [`SpatialData`](https://spatialdata.scverse.org/) objects saved as SpatialData objects.
 
 ## Repository Structure
 
@@ -20,7 +18,7 @@ MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics d
 ├── example
 │   ├── 00_align_one_core.ipynb
 │   └── data
-│       └── prepare_example_data.ipynb
+│       └── get_example_data.sh
 ├── LICENSE
 ├── pyproject.toml
 ├── README.md
@@ -31,18 +29,19 @@ MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics d
         └── xenium_macsima_core_registration.py
 ```
 
----
-
 ## Workflow Overview
 
 Each TMA core is treated as an independent dataset and processed through the following steps:
 
-1. **Match ROIs** — Map MACSima ROI indices to Xenium TMA positions; generate diagnostic plots
-2. **Load data** — Annotated H5AD metadata, Xenium spatial data, MACSima DAPI image
-3. **Align tables** — Join annotated metadata with Xenium cell table by `cell_id` / `obs_name_orig`
-4. **Register images** — SIFT-based affine registration of MACSima DAPI to Xenium morphology focus
-5. **Assemble SpatialData** — Combine images, boundaries, transcripts, and cell table into one object
-6. **Save & QC** — Write Zarr archive and generate a 2×2 registration quality figure
+1) Load Xenium data, AnnData object with Xenium cell-to-core mappings, and CSV file with Xenium Core to MACSima ROI mapping.  
+2) For each core:  
+    3) Crop the Xenium data to the TMA core and write it to disk as a SpatialData Object.  
+    4) Load MACSima images (DAPI cycle 0 + all signal channels).    
+    5) Identify the affine transform that maps the MACSima DAPI image onto the Xenium morphology-focus DAPI image with SIFT-based feature matching.  
+    6) Transform the MACSima image and write it to the SpatialData Object.  
+    7) Quantify the mean protein expression in each cell from the Xenium segmentation and write it to the SpatialData Object.  
+
+The result is a SpatialData object containing aligned images, cell + nucleus segmentation boundaries, cell labels, the transcriptomic and proteomic cell table and raw transcript coordinates.  
 
 ---
 
@@ -92,11 +91,18 @@ The AnnData file must contain the following columns in `.obs`:
 
 ### Run full slide (all cores)
 
-Update the hardcoded paths in the script, then run:
-
 ```bash
-python src/xenium_macsima_core_registration/match_rois_cores_fullslide.py
+python src/xenium_macsima_core_registration/match_rois_cores_fullslide.py xenium_folder adata_path roi_map_file slide_name macsima_folder scale_factor output_folder
 ```
+
+- `xenium_folder`  = Path to the Xenium On-boar Analysis output folder.
+- `adata_path `    = Path to the AnnData object (H5AD) with the Xenium TMA core appartenance annotation for each cell.
+- `roi_map_file`   = Path to the .CSV file with the Xenium TMA cores tpo MACSima ROIs.
+- `slide_name`     = Name of The MACSima slide.
+- `macsima_folder` = Path to the preprocessed MACsima folder containing all ROIs.
+- `scale_factor`   = Scale factor for rescaling MACSima nad Xenium images for registration
+- `output_folder`  = Path for output.
+
 
 ### Programmatic API
 
@@ -106,23 +112,25 @@ from xenium_macsima_core_registration.xenium_macsima_core_registration import Xe
 reg = XeniumMacsimaRegistration(scale_factor=3)
 
 # Load data
-adata        = reg.load_annotated_data(h5ad_path, slide_name="TMAN02-1-1", position="29")
-xenium_data  = reg.load_xenium_data(xenium_folder)
-adata_f, dx  = reg.align_data_tables()
+adata        = registration.load_annotated_data(h5ad_path=adata_path, slide_name=slide_name)
+xenium_data = registration.load_xenium_data(xenium_folder)
+dx  = reg.align_data_tables()
 
-# Load images
-mf_img       = reg.load_morphology_focus(xenium_folder)
-mac_img      = reg.load_macsima_image(macsima_dapi_path)
+# Crop Xenium
+registration.crop()
+registration.write_crop(sdata_output_path)
 
 # Register
-bbox         = reg.calculate_roi_bbox(dx)
-mf_roi       = reg.extract_roi_from_morphology(mf_img, bbox)
-aff, aff_full, aligned = reg.register_images(mac_img, mf_roi)
+registration.load_macsima_images(macsima_roi_folder)
+registration.add_macsima()
+registration.write_macsima()
 
-# Assemble and save
-sd_obj       = reg.create_aligned_spatialdata(aligned, mf_roi)
-reg.add_table_and_transcripts(sd_obj, dx)
-sd_obj.write("output.zarr", overwrite=True, consolidate_metadata=True)
+# Quantify proteins
+registration.quantify_proteins()
+registration.write_proteins()
+
+# Plot alignment
+registration.create_registration_summary_plot()
 ```
 
 ---
@@ -142,23 +150,22 @@ Each processed core produces:
 
 | Panel | Content |
 |---|---|
-| Top-left | Xenium morphology focus with cell centers (red) |
-| Top-right | MACSima DAPI (preprocessed) |
-| Bottom-left | MACSima DAPI with cell centers (cyan) |
-| Bottom-right | RGB overlay — red = MACSima, green = morphology focus; **yellow/white = good alignment** |
+| Top-left | Xenium morphology focus DAPI images (red) |
+| Top-right | MACSima DAPI (green) |
+| Bottom-left | MACSima DAPI (blue) with cell boundaries (red)  |
+| Bottom-right | RGB overlay — red = MACSima DAPI, green = Xenium DAPI |
+
+<img width="950" height="1060" alt="grafik" src="https://github.com/user-attachments/assets/0dce4818-f4f3-416a-91fc-b3f45af23790" />
+
 
 ---
 
 
-## Example Data (please modify)*
+## Example Data 
 
-A minimal example using a single pre-extracted core from slide `TMAN02-1-1`, Position 29 (MACSima ROI 13):
-
-- ~2,000 annotated cells
-- 11 MACSima channels: DAPI + CD3, CD4, CD8a, CD20, CD31, CD68, Cytokeratin8, FoxP3, Ki67, Vimentin
-- All spatial coordinates in **µm** relative to the top-left corner of the cropped region
-
-Example data were generated by `example/data/prepare_example_data.ipynb`, which crops and filters full-slide files to this single core.
+A minimal example using a single pre-extracted core from slide `TMAN02-1-1`, Position 1 (MACSima ROI 40).  
+The example data has been deposited in the BioImage archive at:  
+The example data can be retrieved with the script:   
 
 ---
 
@@ -170,7 +177,7 @@ Example data were generated by `example/data/prepare_example_data.ipynb`, which 
 
 ## Citation
 
-> *If you use this pipeline in your work, please cite: (citation to be added)*
+> *If you use these scripts in your work, please cite: (citation to be added)*
 
 ---
 
