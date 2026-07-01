@@ -149,7 +149,10 @@ class XeniumMacsimaRegistration:
 
         print("Transfroming to global coordinate system")
         self.aligned_data = self.aligned_data.transform_to_coordinate_system("global")
+
         # cell_boundaries
+        self.aligned_data["cell_boundaries"] = self.aligned_data["cell_boundaries"].loc[
+                self.aligned_data["table"].obs.index]
         sd.transformations.set_transformation(self.aligned_data["cell_boundaries"],
                                               to_coordinate_system="global", transformation=Identity()) 
         self.aligned_data["cell_boundaries"].geometry = self.aligned_data["cell_boundaries"].geometry.translate(
