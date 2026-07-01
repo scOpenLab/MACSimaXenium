@@ -16,6 +16,7 @@
   10. Save result as Zarr
 """
 
+import time
 import os
 import scanpy as sc
 import matplotlib.pyplot as plt
@@ -100,6 +101,7 @@ plt.close()
 # Align Each Roi
 for position_adata, roi_macsima in position_roi_map.items():
 
+    start_time = time.time()
     print(f"Working on slide: {slide_name}, position: {position_adata}")
     #if MACSima ROI not present, skip
     if roi_macsima is None:
@@ -151,14 +153,15 @@ for position_adata, roi_macsima in position_roi_map.items():
     print("Quantifying proteins")
     registration.quantify_proteins()
     print("Successfully quantified proteins")
-    print(f"Saving the qunatified protein table to SpatialData at: {sdata_output_path}")
+    print(f"Saving the RNA and protein table to SpatialData at: {sdata_output_path}")
     registration.write_proteins()
 
     # Create registration summary plot
-    #print("Generating registration summary visualization...")
+    print("Generating registration summary visualization...")
     summary_figure = registration.create_registration_summary_plot()
+    print("Saving plot...")
     summary_figure.savefig(os.path.join(output_path,
-        f'POS_{position_adata}_registration_summary.pdf'), dpi=600)
+        f'POS_{position_adata}_registration_summary.png'), dpi=300)
     print("Registration summary plot generated successfully!")
 
     # Save the aligned spatial data
@@ -168,3 +171,4 @@ for position_adata, roi_macsima in position_roi_map.items():
     print(f"Output location: {sdata_output_path}")
     print(f"Processed slide: {slide_name}")
     print(f"ROI position: {position_adata}")
+    print(f"Time for this core: {time.time() - start_time}")

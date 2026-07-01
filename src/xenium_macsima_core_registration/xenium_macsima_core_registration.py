@@ -21,6 +21,7 @@ import dask.array
 import numpy as np
 import cv2 as cv
 import spatialdata as sd
+import spatialdata_plot
 import matplotlib.pyplot as plt
 import scanpy as sc
 import harpy as hp
@@ -57,7 +58,6 @@ class XeniumMacsimaRegistration:
         self.xenium_data = None              # Xenium SpatialData object
         self.dna_mf_roi = None               # Cropped DAPI Xenium image downscaled
         self.adata = None                    # AnnData Object with the MACSima-Xenium ROI mappings 
-        self.bbox = None                     # Bounding box (pixel registration scale)
         self.bbox_unscaled = None            # Bounding box (pixel full Xenium scale)
         self.dx = None                       # Filtered xXenium cell table
         self.macsima_image = None            # MACSima DAPI image full resolution
@@ -65,6 +65,7 @@ class XeniumMacsimaRegistration:
         self.dna_macsima_registered = None   # MACSima DAPI image downscaled and registered
         self.added_macsima_channels = []     # Names of the MACSima images added to the SpatialData object
         self.aligned_data = None             # Aligned SpatialData object
+        self.output_path = None              # Path to where the aligned_data object will be saved 
         
     def load_annotated_data(self, h5ad_path, slide_name):
         """
@@ -168,9 +169,15 @@ class XeniumMacsimaRegistration:
         sd.transformations.set_transformation(self.aligned_data["cell_labels"],
                                               to_coordinate_system="global", transformation=Identity()) 
         
-       # morphology_focus 
+        # morphology_focus 
         sd.transformations.set_transformation(self.aligned_data["morphology_focus"],
                                               to_coordinate_system="global", transformation=Identity()) 
+
+        # cell centroids
+        centers = self.aligned_data["cell_boundaries"].geometry.centroid
+        centers = np.stack((centers.x, centers.y), axis = 1)
+        self.aligned_data["table"].obsm["spatial"] = centers
+
         print("Cropping and transforming transcripts")
         # Copy and fix partitioning
         self.aligned_data["transcripts"] = sd.models.PointsModel.parse(
@@ -202,11 +209,13 @@ class XeniumMacsimaRegistration:
         None
 
         """
+        self.output_path = output_path
         self.aligned_data.write(
             output_path,
             overwrite=True,
             consolidate_metadata=True,
         )
+        self.aligned_data = sd.read_zarr(self.output_path)
 
     def load_macsima_images(self, macsima_path):
         """
@@ -254,18 +263,11 @@ class XeniumMacsimaRegistration:
         tuple
             (x0, y0, x1, y1) bounding box coordinates
         """
-        self.dx.obsm['spatial_transformed'] = (
-            self.dx.obsm['spatial'] * self.transform_factor / self.scale_factor
-        )
-        
-        x0, y0 = self.dx.obsm['spatial_transformed'].min(axis=0).astype(int)
-        x1, y1 = self.dx.obsm['spatial_transformed'].max(axis=0).astype(int)
-        self.bbox = (x0, y0, x1, y1)
 
         x0, y0 = (self.dx.obsm['spatial'].min(axis=0) * self.transform_factor).astype(int)
         x1, y1 = (self.dx.obsm['spatial'].max(axis=0) * self.transform_factor).astype(int)
         self.bbox_unscaled = (x0, y0, x1, y1)
-        return self.bbox
+        return self.bbox_unscaled
     
     def align_data_tables(self, position_adata):
         """
@@ -351,6 +353,7 @@ class XeniumMacsimaRegistration:
         Writes the MACSima image to disk
         """
         self.aligned_data.write_element("macsima")
+        self.aligned_data = sd.read_zarr(self.output_path)
 
     
     def quantify_proteins(self):
@@ -381,10 +384,7 @@ class XeniumMacsimaRegistration:
         Writes the Xenium + MACSima table to disk and removes the old table for each technology.
         """
         self.aligned_data.write_element("rna_protein_table")
-        #del self.aligned_data["table"]
-        #del self.aligned_data["macsima_table"]
-        #self.aligned_data.delete_element_from_disk("table")
-        #self.aligned_data.delete_element_from_disk("macsima_table")
+        self.aligned_data = sd.read_zarr(self.output_path)
 
 
     def create_registration_summary_plot(self):
@@ -409,10 +409,9 @@ class XeniumMacsimaRegistration:
         )
         axes[0, 0] = self.aligned_data.pl.render_images("plot_img", channel = ["r", "g", "b"],
                         norm=Normalize(vmin = 100, vmax = 8000, clip = True)
-                        ).pl.show(scalebar_dx = 212.5, scalebar_units = "nm", ax = axes[0, 0], return_ax=True)
+            ).pl.show(scalebar_dx = 212.5, scalebar_units = "nm", ax = axes[0, 0], return_ax=True, show=False)
         axes[0, 0].set_title('Target: Xenium DAPI')
         axes[0, 0].axis('off')
-
 
         # Top right: Original MACSima
         self.aligned_data["plot_img"] = sd.models.Image2DModel.parse(
@@ -422,18 +421,23 @@ class XeniumMacsimaRegistration:
             c_coords=("r", "g", "b")
         )
         axes[0, 1] = self.aligned_data.pl.render_images("plot_img", channel = ["r", "g", "b"],
-                          norm=Normalize(vmin = 100, vmax = 8000, clip = True)
-                          ).pl.show(scalebar_dx = 170.0, scalebar_units = "nm", ax = axes[0, 1], return_ax=True)
+                          norm=Normalize(vmin = 100, vmax = 12000, clip = True)
+            ).pl.show(scalebar_dx = 170.0, scalebar_units = "nm", ax = axes[0, 1], return_ax=True, show=False)
         axes[0, 1].set_title('Source: MACSima DAPI')
         axes[0, 1].axis('off')
 
         # Bottom left: Aligned MACSima with cell boundaries
-        axes[1, 0] = self.aligned_data.pl.render_images("macsima", channel = "0_DAPI_DAPI",
-                            palette = "blue", norm=Normalize(vmin = 100, vmax = 4000, clip = True)
-            ).pl.render_shapes("cell_boundaries", outline_width = 0.5,
-                            outline_color = "red", fill_alpha = 0,
-                            outline_alpha = 1
-            ).pl.show(scalebar_dx = 212.5, scalebar_units = "nm", ax = axes[1, 0], return_ax=True)
+        self.aligned_data["plot_img"] = sd.models.Image2DModel.parse(
+            dask.array.stack((dask.array.zeros_like(self.aligned_data["macsima"][0, ...]),   # R = 0
+                            dask.array.zeros_like(self.aligned_data["macsima"][0, ...]),     # G = 0
+                            self.aligned_data["macsima"][0, ...])),                          # B = MACSima (aligned)
+            c_coords=("r", "g", "b")
+        )
+        axes[1, 0] = self.aligned_data.pl.render_images("plot_img", channel = ["r", "g", "b"],
+                            norm=Normalize(vmin = 100, vmax = 8000, clip = True)
+            ).pl.render_shapes("cell_boundaries", fill_alpha=0.0, outline_width=0.5,
+                               outline_color="#FF0000", outline_alpha=1.0
+            ).pl.show(scalebar_dx = 212.5, scalebar_units = "nm", ax = axes[1, 0], return_ax=True, show=False)
         axes[1, 0].set_title('Aligned: MACSima with Cell Boundaries')
         axes[1, 0].axis('off')
 
@@ -447,12 +451,11 @@ class XeniumMacsimaRegistration:
         )
         axes[1, 1] = self.aligned_data.pl.render_images("plot_img", channel = ["r", "g", "b"],
                         norm=Normalize(vmin = 100, vmax = 8000, clip = True)
-                        ).pl.show(scalebar_dx = 212.5, scalebar_units = "nm", ax = axes[1, 1], return_ax=True)
+            ).pl.show(scalebar_dx = 212.5, scalebar_units = "nm", ax = axes[1, 1], return_ax=True, show=False)
         axes[1, 1].set_title('Red=MACSima DAPI, Green= Xenium DAPI')
         axes[1, 1].axis('off')
 
         # Cleanup 
-        fig.delaxes(fig.axes[-1]) # Reomove colorbar
         del self.aligned_data["plot_img"]
 
         return fig
