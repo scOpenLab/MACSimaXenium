@@ -377,6 +377,7 @@ class XeniumMacsimaRegistration:
         full_table = ad.concat(adatas=[self.aligned_data["table"], self.aligned_data["macsima_table"]],
                                join="inner", merge = "unique", axis="var")
         full_table.obs = full_table.obs.rename(columns = {"cell_id":"label_value"})
+        full_table.uns = self.aligned_data["macsima_table"].uns
         self.aligned_data["rna_protein_table"] = full_table
 
     def write_proteins(self):
@@ -385,7 +386,10 @@ class XeniumMacsimaRegistration:
         """
         self.aligned_data.write_element("rna_protein_table")
         self.aligned_data = sd.read_zarr(self.output_path)
-
+        del self.aligned_data["table"]
+        del self.aligned_data["macsima_table"]
+        self.aligned_data.delete_element_from_disk("table")
+        self.aligned_data.delete_element_from_disk("macsima_table")
 
     def create_registration_summary_plot(self):
         """
