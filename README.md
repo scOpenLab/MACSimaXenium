@@ -16,8 +16,7 @@ MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics d
 
 ```
 ├── example
-│   ├── 00_align_one_core.ipynb
-│   └── data
+│   └── align_one_core.ipynb
 ├── LICENSE
 ├── pyproject.toml
 ├── README.md
@@ -163,8 +162,7 @@ Each processed core produces:
 ## Example Data 
 
 A minimal example using a single pre-extracted core from slide `TMAN02-1-1`, Position 1 (MACSima ROI 40).  
-The example data has been deposited in the BioImage archive at:  
-The example data can be retrieved with the script:   
+The example data has been deposited in the BioImage archive at: https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3678
 
 ---
 
