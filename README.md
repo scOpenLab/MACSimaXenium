@@ -18,7 +18,6 @@ MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics d
 ├── example
 │   ├── 00_align_one_core.ipynb
 │   └── data
-│       └── get_example_data.sh
 ├── LICENSE
 ├── pyproject.toml
 ├── README.md
