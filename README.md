@@ -10,7 +10,7 @@
 
 ## Overview
 
-MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics data with **MACSima** multiplexed cyclic immunofluorescence imaging. Registration is performed per tissue microarray (TMA) core using SIFT-based feature matching and outputs multi-modal [`SpatialData`](https://spatialdata.scverse.org/) objects saved as SpatialData objects.
+MACSimaXenium provides scripts for aligning **Xenium** spatial transcriptomics data with **MACSima** multiplexed cyclic immunofluorescence imaging. Registration is performed per tissue microarray (TMA) core using SIFT-based feature matching and outputs multi-modal [`SpatialData`](https://spatialdata.scverse.org/) objects.
 
 ## Repository Structure
 
