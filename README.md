@@ -174,7 +174,45 @@ The example data has been deposited in the BioImage archive at: https://www.ebi.
 
 ## Citation
 
-> *If you use these scripts in your work, please cite: (citation to be added)*
+> *If you use these scripts in your work, please cite:*
+
+*Sophia Scheuermann, Jakob Rosenbauer, Michele Bortolomeazzi, Pooja Sant, Cindy Pamela Ulloa Guerrero, Laura Schütze, Michael Platten, Jan-Philipp Mallm, Christian M. Seitz*   
+**Protocol for integrated multimodal spatial RNA and protein profiling using Xenium and MACSima**  
+STAR Protocols, Volume 7, Issue 4, 2026, 104946, ISSN 2666-1667, https://doi.org/10.1016/j.xpro.2026.104946.  
+[https://www.sciencedirect.com/science/article/pii/S266616672600599X](https://www.sciencedirect.com/science/article/pii/S266616672600599X)
+
+
+```
+
+TY  - JOUR
+T1  - Protocol for integrated multimodal spatial RNA and protein profiling using Xenium and MACSima
+AU  - Scheuermann, Sophia
+AU  - Rosenbauer, Jakob
+AU  - Bortolomeazzi, Michele
+AU  - Sant, Pooja
+AU  - Ulloa Guerrero, Cindy Pamela
+AU  - Schütze, Laura
+AU  - Platten, Michael
+AU  - Mallm, Jan-Philipp
+AU  - Seitz, Christian M.
+Y1  - 2026/12/18
+PY  - 2026
+N1  - doi: 10.1016/j.xpro.2026.104946
+DO  - 10.1016/j.xpro.2026.104946
+T2  - STAR Protocols
+JF  - STAR Protocols
+VL  - 7
+IS  - 4
+PB  - Elsevier
+N2  - Combining same-section spatial transcriptomics with high-plex protein imaging enables comprehensive characterization of the tissue microenvironment while preserving spatial information. Here, we present a protocol for multimodal spatial RNA and protein profiling using Xenium transcriptomics and MACSima cyclic protein imaging. We describe steps for tissue preparation, hybridization, and RNA imaging, followed by slide recovery, antigen retrieval, and MACSima imaging cyclic staining (MICS). We provide Python scripts for data registration and integration to generate a single-cell multimodal map of the tissue microenvironment.
+AB  - Combining same-section spatial transcriptomics with high-plex protein imaging enables comprehensive characterization of the tissue microenvironment while preserving spatial information. Here, we present a protocol for multimodal spatial RNA and protein profiling using Xenium transcriptomics and MACSima cyclic protein imaging. We describe steps for tissue preparation, hybridization, and RNA imaging, followed by slide recovery, antigen retrieval, and MACSima imaging cyclic staining (MICS). We provide Python scripts for data registration and integration to generate a single-cell multimodal map of the tissue microenvironment.
+SN  - 2666-1667
+M3  - doi: 10.1016/j.xpro.2026.104946
+UR  - https://doi.org/10.1016/j.xpro.2026.104946
+Y2  - 2026/11/18
+ER  - 
+
+```
 
 ---
 
